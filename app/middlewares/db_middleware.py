@@ -1,10 +1,14 @@
 from typing import Callable, Dict, Any, Awaitable
 from aiogram import BaseMiddleware
 from aiogram.types import TelegramObject
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+from services.user_service import UserService
 
 class DbSessionMiddleware(BaseMiddleware):
-    def __init__(self, session_pool: async_sessionmaker):
+    """
+    Middleware to provide each handler with a database session and a UserService instance.
+    """
+    def __init__(self, session_pool: async_sessionmaker[AsyncSession]):
         super().__init__()
         self.session_pool = session_pool
 
@@ -14,6 +18,18 @@ class DbSessionMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: Dict[str, Any],
     ) -> Any:
+        """
+        Executes the middleware.
+
+        This method is called for every update. It creates a new session,
+        initializes the UserService with that session, and passes both to the handler.
+        The session is automatically closed when the 'async with' block is exited.
+        """
         async with self.session_pool() as session:
+            # Provide the session object to the handler's data
             data["session"] = session
+            # Provide a UserService instance initialized with the current session
+            data["user_service"] = UserService(session)
+            
+            # Call the next handler in the chain
             return await handler(event, data)
