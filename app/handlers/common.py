@@ -1,0 +1,566 @@
+from aiogram import Router, F
+from aiogram.filters import Command, StateFilter
+from aiogram.types import Message, CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from sqlalchemy.ext.asyncio import AsyncSession
+import logging
+
+from app.core.config import settings
+from app.services.ai_service import AIService
+from app.services.user_service import UserService
+from app.keyboards.builders import (
+    get_main_menu, get_content_type_keyboard, get_profile_setup_keyboard,
+    get_profile_edit_keyboard, get_payment_keyboard, get_back_keyboard
+)
+from app.models.schema import PageStyle, AudienceType, SalesGoal, ContentType
+
+logger = logging.getLogger(__name__)
+
+# States
+class ProfileSetup(StatesGroup):
+    waiting_for_style = State()
+    waiting_for_audience = State()
+    waiting_for_goal = State()
+    waiting_for_business_name = State()
+
+class ContentGeneration(StatesGroup):
+    waiting_for_content_type = State()
+    waiting_for_caption_input = State()
+    waiting_for_reels_input = State()
+    waiting_for_visual_input = State()
+
+class ProfileEdit(StatesGroup):
+    editing_style = State()
+    editing_audience = State()
+    editing_goal = State()
+    editing_business = State()
+
+# Create router
+router = Router()
+
+# Dependency injection helpers
+async def get_db_session() -> AsyncSession:
+    """Get database session - this should be injected properly"""
+    # This is a placeholder - in real implementation, this would be injected
+    from app.core.config import settings
+    from app.core.db import Database
+    
+    db = Database(settings.DATABASE_URL)
+    async for session in db.get_session():
+        return session
+
+async def get_user_service(message: Message) -> UserService:
+    """Get user service with database session"""
+    db_session = await get_db_session()
+    return UserService(db_session)
+
+# Command handlers
+@router.message(Command("start"))
+async def cmd_start(message: Message, state: FSMContext):
+    """Handle /start command"""
+    try:
+        user_service = await get_user_service(message)
+        
+        # Create or get user
+        user = await user_service.get_or_create_user(
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name
+        )
+        
+        # Check if profile is complete
+        profile = await user_service.get_user_profile(user.id)
+        
+        if not profile or not profile.page_style:
+            welcome_text = """
+سلام! من دستیار هوش مصنوعی تولید محتوای شما هستم 💎
+
+برای شروع، لطفاً پروفایل خودتان را تکمیل کنید تا بتوانم محتوای مناسب‌تری برایتان تولید کنم.
+
+اول بگید که سبک پیج‌تون چیه؟
+            """
+            await message.answer(
+                welcome_text.strip(),
+                reply_markup=get_profile_setup_keyboard("style")
+            )
+            await state.set_state(ProfileSetup.waiting_for_style)
+        else:
+            subscription = await user_service.get_user_subscription(user.id)
+            is_subscribed = subscription.is_active if subscription else False
+            
+            if is_subscribed:
+                welcome_back = f"""
+خوش برگشتید! 🎉
+
+آماده تولید محتوای فوق‌العاده برای کسب‌وکارتان هستم.
+اشتراک شما تا {subscription.expires_at.strftime('%Y/%m/%d')} فعال است.
+
+چه کاری می‌تونم برای شما انجام بدهم؟
+                """
+            else:
+                welcome_back = """
+خوش برگشتید! 
+
+دوره آزمایشی شما به پایان رسیده است. برای ادامه استفاده از خدمات، لطفاً اشتراک خود را تمدید کنید.
+                """
+            
+            await message.answer(
+                welcome_back.strip(),
+                reply_markup=get_main_menu(is_subscribed)
+            )
+            await state.clear()
+            
+    except Exception as e:
+        logger.error(f"Error in start command: {e}")
+        await message.answer("خطایی رخ داده است. لطفاً دوباره تلاش کنید.")
+
+@router.message(Command("profile"))
+async def cmd_profile(message: Message):
+    """Handle /profile command"""
+    try:
+        user_service = await get_user_service(message)
+        user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
+        profile = await user_service.get_user_profile(user.id)
+        
+        if not profile:
+            await message.answer("پروفایل شما یافت نشد. لطفاً دوباره /start کنید.")
+            return
+        
+        profile_text = f"""
+📊 پروفایل شما:
+
+🎨 سبک پیج: {profile.page_style.value if profile.page_style else 'تنظیم نشده'}
+👥 نوع مخاطب: {profile.audience_type.value if profile.audience_type else 'تنظیم نشده'}
+🎯 هدف فروش: {profile.sales_goal.value if profile.sales_goal else 'تنظیم نشده'}
+
+{f"🏪 نام کسب‌وکار: {profile.business_name}" if profile.business_name else ""}
+{f"📝 توضیحات: {profile.business_description}" if profile.business_description else ""}
+{f"📱 اینستاگرام: @{profile.instagram_handle}" if profile.instagram_handle else ""}
+        """
+        
+        await message.answer(
+            profile_text.strip(),
+            reply_markup=get_profile_edit_keyboard()
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in profile command: {e}")
+        await message.answer("خطایی رخ داده است. لطفاً دوباره تلاش کنید.")
+
+# Profile setup handlers
+@router.callback_query(F.data.startswith("style_"))
+async def handle_style_selection(callback: CallbackQuery, state: FSMContext):
+    """Handle style selection"""
+    try:
+        style_name = callback.data.split("_")[1].upper()
+        style = PageStyle[style_name]
+        
+        await state.update_data(page_style=style)
+        
+        await callback.message.edit_text(
+            f"عالی! سبک «{style.value}» انتخاب شد.\n\nحالا بگید مخاطب اصلی‌تون کیان؟",
+            reply_markup=get_profile_setup_keyboard("audience")
+        )
+        await state.set_state(ProfileSetup.waiting_for_audience)
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"Error in style selection: {e}")
+        await callback.answer("خطایی رخ داده است.")
+
+@router.callback_query(F.data.startswith("audience_"))
+async def handle_audience_selection(callback: CallbackQuery, state: FSMContext):
+    """Handle audience selection"""
+    try:
+        audience_name = callback.data.split("_")[1].upper()
+        audience = AudienceType[audience_name]
+        
+        await state.update_data(audience_type=audience)
+        
+        await callback.message.edit_text(
+            f"مخاطب «{audience.value}» انتخاب شد.\n\nهدف اصلی‌تون از تولید محتوا چیه؟",
+            reply_markup=get_profile_setup_keyboard("goal")
+        )
+        await state.set_state(ProfileSetup.waiting_for_goal)
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"Error in audience selection: {e}")
+        await callback.answer("خطایی رخ داده است.")
+
+@router.callback_query(F.data.startswith("goal_"))
+async def handle_goal_selection(callback: CallbackQuery, state: FSMContext):
+    """Handle goal selection"""
+    try:
+        goal_name = callback.data.split("_")[1].upper()
+        goal = SalesGoal[goal_name]
+        
+        data = await state.get_data()
+        data['sales_goal'] = goal
+        
+        # Save profile
+        user_service = await get_user_service(callback.message)
+        user = await user_service.get_or_create_user(telegram_id=callback.from_user.id)
+        
+        success = await user_service.update_user_profile(
+            user.id,
+            page_style=data['page_style'],
+            audience_type=data['audience_type'],
+            sales_goal=data['sales_goal']
+        )
+        
+        if success:
+            subscription = await user_service.get_user_subscription(user.id)
+            is_subscribed = subscription.is_active if subscription else False
+            
+            success_text = f"""
+تبریک! پروفایل شما تکمیل شد ✅
+
+🎨 سبک: {data['page_style'].value}
+👥 مخاطب: {data['audience_type'].value}  
+🎯 هدف: {goal.value}
+
+حالا می‌تونید شروع کنید و محتوای فوق‌العاده تولید کنید! 🚀
+
+{f"🎁 شما {settings.TRIAL_DAYS} روز آزمایشی دارید." if is_subscribed else ""}
+            """
+            
+            await callback.message.edit_text(success_text.strip())
+            await callback.message.answer(
+                "چه کاری می‌تونم برای شما انجام بدهم؟",
+                reply_markup=get_main_menu(is_subscribed)
+            )
+            await state.clear()
+        else:
+            await callback.message.edit_text("خطا در ذخیره پروفایل. لطفاً دوباره تلاش کنید.")
+        
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"Error in goal selection: {e}")
+        await callback.answer("خطایی رخ داده است.")
+
+# Main menu handlers
+@router.message(F.text == "🧠 تولید محتوا")
+async def handle_content_generation(message: Message, state: FSMContext):
+    """Handle content generation menu"""
+    try:
+        user_service = await get_user_service(message)
+        user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
+        
+        # Check subscription
+        subscription = await user_service.get_user_subscription(user.id)
+        if not subscription or not subscription.is_active:
+            await message.answer(
+                "برای استفاده از تولید محتوا، ابتدا باید اشتراک داشته باشید.",
+                reply_markup=get_payment_keyboard()
+            )
+            return
+        
+        await message.answer(
+            "چه نوع محتوایی می‌خواید تولید کنید؟",
+            reply_markup=get_content_type_keyboard()
+        )
+        await state.set_state(ContentGeneration.waiting_for_content_type)
+        
+    except Exception as e:
+        logger.error(f"Error in content generation: {e}")
+        await message.answer("خطایی رخ داده است. لطفاً دوباره تلاش کنید.")
+
+@router.message(F.text == "✍️ کپشن نویسی", StateFilter(ContentGeneration.waiting_for_content_type))
+async def handle_caption_request(message: Message, state: FSMContext):
+    """Handle caption generation request"""
+    await message.answer(
+        "محصول یا موضوعی که می‌خواید کپشن براش بنویسم رو توضیح بدید:\n\n"
+        "مثال: انگشتر طلا با نگین الماس برای عروس‌خانم‌ها",
+        reply_markup=get_back_keyboard()
+    )
+    await state.set_state(ContentGeneration.waiting_for_caption_input)
+
+@router.message(F.text == "🎬 سناریو ریلز", StateFilter(ContentGeneration.waiting_for_content_type))
+async def handle_reels_request(message: Message, state: FSMContext):
+    """Handle reels scenario request"""
+    await message.answer(
+        "موضوع یا مناسبتی که می‌خواید سناریو ریلز براش داشته باشید رو بگید:\n\n"
+        "مثال: فروش ویژه شب یلدا، معرفی مجموعه جدید، ولنتاین",
+        reply_markup=get_back_keyboard()
+    )
+    await state.set_state(ContentGeneration.waiting_for_reels_input)
+
+@router.message(F.text == "📷 ایده بصری", StateFilter(ContentGeneration.waiting_for_content_type))
+async def handle_visual_request(message: Message, state: FSMContext):
+    """Handle visual ideas request"""
+    await message.answer(
+        "نوع محصولی که می‌خواید ایده عکاسی براش داشته باشید رو بگید:\n\n"
+        "مثال: دستبند طلا، گردنبند مروارید، حلقه نامزدی\n"
+        "اگر وسایل خاصی در دسترس دارید هم بگید.",
+        reply_markup=get_back_keyboard()
+    )
+    await state.set_state(ContentGeneration.waiting_for_visual_input)
+
+# Content generation handlers
+@router.message(StateFilter(ContentGeneration.waiting_for_caption_input))
+async def generate_captions(message: Message, state: FSMContext):
+    """Generate captions for user input"""
+    if message.text == "🔙 بازگشت":
+        await back_to_main_menu(message, state)
+        return
+    
+    try:
+        user_service = await get_user_service(message)
+        user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
+        profile = await user_service.get_user_profile(user.id)
+        
+        if not profile:
+            await message.answer("لطفاً ابتدا پروفایل خود را تکمیل کنید. /profile")
+            return
+        
+        # Show loading message
+        loading_msg = await message.answer("در حال تولید کپشن... ⏳")
+        
+        # Generate captions
+        ai_service = AIService()
+        captions = await ai_service.generate_caption(
+            product_description=message.text,
+            user_profile=profile
+        )
+        
+        # Save to history
+        captions_text = "\n\n---\n\n".join(captions)
+        await user_service.save_content_history(
+            user.id,
+            ContentType.CAPTION,
+            message.text,
+            captions_text
+        )
+        
+        # Send results
+        await loading_msg.delete()
+        
+        result_text = "🎯 کپشن‌های پیشنهادی:\n\n"
+        for i, caption in enumerate(captions, 1):
+            result_text += f"کپشن {i}:\n{caption}\n\n---\n\n"
+        
+        await message.answer(result_text.strip())
+        await message.answer(
+            "کپشن‌ها آماده شد! ✅\nمی‌خواید محتوای دیگری تولید کنید؟",
+            reply_markup=get_content_type_keyboard()
+        )
+        await state.set_state(ContentGeneration.waiting_for_content_type)
+        
+    except Exception as e:
+        logger.error(f"Error generating captions: {e}")
+        await message.answer("خطا در تولید کپشن. لطفاً دوباره تلاش کنید.")
+
+@router.message(StateFilter(ContentGeneration.waiting_for_reels_input))
+async def generate_reels_scenarios(message: Message, state: FSMContext):
+    """Generate reels scenarios"""
+    if message.text == "🔙 بازگشت":
+        await back_to_main_menu(message, state)
+        return
+    
+    try:
+        user_service = await get_user_service(message)
+        user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
+        profile = await user_service.get_user_profile(user.id)
+        
+        if not profile:
+            await message.answer("لطفاً ابتدا پروفایل خود را تکمیل کنید. /profile")
+            return
+        
+        loading_msg = await message.answer("در حال تولید سناریو ریلز... 🎬")
+        
+        ai_service = AIService()
+        scenarios = await ai_service.generate_reels_scenario(
+            theme=message.text,
+            user_profile=profile
+        )
+        
+        # Save to history
+        scenarios_text = "\n\n---\n\n".join(scenarios)
+        await user_service.save_content_history(
+            user.id,
+            ContentType.REELS,
+            message.text,
+            scenarios_text
+        )
+        
+        await loading_msg.delete()
+        
+        result_text = "🎬 سناریوهای ریلز پیشنهادی:\n\n"
+        for i, scenario in enumerate(scenarios, 1):
+            result_text += f"سناریو {i}:\n{scenario}\n\n---\n\n"
+        
+        await message.answer(result_text.strip())
+        await message.answer(
+            "سناریوها آماده شد! ✅\nمی‌خواید محتوای دیگری تولید کنید؟",
+            reply_markup=get_content_type_keyboard()
+        )
+        await state.set_state(ContentGeneration.waiting_for_content_type)
+        
+    except Exception as e:
+        logger.error(f"Error generating reels: {e}")
+        await message.answer("خطا در تولید سناریو ریلز. لطفاً دوباره تلاش کنید.")
+
+@router.message(StateFilter(ContentGeneration.waiting_for_visual_input))
+async def generate_visual_ideas(message: Message, state: FSMContext):
+    """Generate visual ideas"""
+    if message.text == "🔙 بازگشت":
+        await back_to_main_menu(message, state)
+        return
+    
+    try:
+        user_service = await get_user_service(message)
+        user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
+        profile = await user_service.get_user_profile(user.id)
+        
+        if not profile:
+            await message.answer("لطفاً ابتدا پروفایل خود را تکمیل کنید. /profile")
+            return
+        
+        loading_msg = await message.answer("در حال تولید ایده‌های بصری... 📷")
+        
+        ai_service = AIService()
+        ideas = await ai_service.generate_visual_ideas(
+            product_type=message.text,
+            user_profile=profile
+        )
+        
+        # Save to history
+        ideas_text = "\n\n---\n\n".join(ideas)
+        await user_service.save_content_history(
+            user.id,
+            ContentType.VISUAL,
+            message.text,
+            ideas_text
+        )
+        
+        await loading_msg.delete()
+        
+        result_text = "📷 ایده‌های بصری پیشنهادی:\n\n"
+        for i, idea in enumerate(ideas, 1):
+            result_text += f"ایده {i}:\n{idea}\n\n---\n\n"
+        
+        await message.answer(result_text.strip())
+        await message.answer(
+            "ایده‌ها آماده شد! ✅\nمی‌خواید محتوای دیگری تولید کنید؟",
+            reply_markup=get_content_type_keyboard()
+        )
+        await state.set_state(ContentGeneration.waiting_for_content_type)
+        
+    except Exception as e:
+        logger.error(f"Error generating visual ideas: {e}")
+        await message.answer("خطا در تولید ایده بصری. لطفاً دوباره تلاش کنید.")
+
+# Subscription handlers
+@router.message(F.text == "🔁 تمدید اشتراک")
+async def handle_subscription_renewal(message: Message):
+    """Handle subscription renewal"""
+    try:
+        user_service = await get_user_service(message)
+        user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
+        subscription = await user_service.get_user_subscription(user.id)
+        
+        if subscription and subscription.is_active:
+            expiry_date = subscription.expires_at.strftime('%Y/%m/%d')
+            await message.answer(
+                f"اشتراک شما تا {expiry_date} فعال است.\n"
+                f"برای تمدید زودهنگام، گزینه موردنظر را انتخاب کنید:",
+                reply_markup=get_payment_keyboard()
+            )
+        else:
+            await message.answer(
+                "اشتراک شما منقضی شده است.\n"
+                "برای ادامه استفاده از خدمات، یکی از گزینه‌های زیر را انتخاب کنید:",
+                reply_markup=get_payment_keyboard()
+            )
+            
+    except Exception as e:
+        logger.error(f"Error in subscription renewal: {e}")
+        await message.answer("خطایی رخ داده است. لطفاً دوباره تلاش کنید.")
+
+@router.callback_query(F.data.startswith("payment_"))
+async def handle_payment_selection(callback: CallbackQuery):
+    """Handle payment option selection"""
+    try:
+        # Parse payment data
+        parts = callback.data.split("_")
+        payment_type = parts[1]  # monthly or seasonal
+        amount = int(parts[2])
+        
+        # Generate payment link (mock implementation)
+        payment_link = f"https://zarinpal.com/pg/StartPay/mock-{callback.from_user.id}-{amount}"
+        
+        payment_text = f"""
+💳 پرداخت {payment_type}
+
+مبلغ: {amount:,} تومان
+لینک پرداخت: {payment_link}
+
+⚠️ پس از پرداخت، لطفاً کد پیگیری را برای ما ارسال کنید تا اشتراک‌تان فعال شود.
+        """
+        
+        await callback.message.edit_text(payment_text.strip())
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"Error in payment selection: {e}")
+        await callback.answer("خطایی رخ داده است.")
+
+# Utility handlers
+@router.message(F.text == "🔙 بازگشت")
+async def back_to_main_menu(message: Message, state: FSMContext):
+    """Return to main menu"""
+    try:
+        user_service = await get_user_service(message)
+        user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
+        subscription = await user_service.get_user_subscription(user.id)
+        is_subscribed = subscription.is_active if subscription else False
+        
+        await message.answer(
+            "بازگشت به منوی اصلی",
+            reply_markup=get_main_menu(is_subscribed)
+        )
+        await state.clear()
+        
+    except Exception as e:
+        logger.error(f"Error returning to main menu: {e}")
+        await message.answer("خطایی رخ داده است.")
+
+@router.message(F.text == "❓ راهنما")
+async def handle_help(message: Message):
+    """Handle help command"""
+    help_text = """
+🤖 راهنمای ربات تولید محتوا
+
+🧠 تولید محتوا:
+• کپشن نویسی: کپشن جذاب برای پست‌ها
+• سناریو ریلز: ایده برای ویدیوهای کوتاه
+• ایده بصری: پیشنهاد برای عکاسی محصولات
+
+🎛️ ویرایش پروفایل:
+• تغییر سبک، مخاطب و هدف
+• اطلاعات کسب‌وکار
+
+🔁 تمدید اشتراک:
+• پرداخت ماهانه یا فصلی
+• مشاهده وضعیت اشتراک
+
+📞 پشتیبانی: @sinaMobarez
+    """
+    
+    await message.answer(help_text.strip())
+
+@router.message()
+async def handle_unknown_message(message: Message):
+    """Handle unknown messages"""
+    await message.answer(
+        "متوجه نشدم چی گفتید. 🤔\n"
+        "از منو یکی از گزینه‌ها رو انتخاب کنید یا /help بزنید."
+    )
+
+def register_handlers() -> Router:
+    """Register all handlers and return router"""
+    return router
