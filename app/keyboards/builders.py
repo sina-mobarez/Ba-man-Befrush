@@ -1,6 +1,6 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
-from app.models.schema import PageStyle, AudienceType, SalesGoal
+from models.schema import PageStyle, AudienceType, SalesGoal
 
 def get_main_menu(is_subscribed: bool = True) -> ReplyKeyboardMarkup:
     """Main menu keyboard"""

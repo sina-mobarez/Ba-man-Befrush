@@ -4,8 +4,8 @@ from typing import Optional
 import logging
 from datetime import datetime
 
-from app.models.schema import User, UserProfile, Subscription, ContentHistory, SubscriptionStatus
-from app.core.config import settings
+from models.schema import User, UserProfile, Subscription, ContentHistory, SubscriptionStatus
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 

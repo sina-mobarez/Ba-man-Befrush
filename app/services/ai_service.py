@@ -1,8 +1,8 @@
 import openai
 from typing import List, Optional
 import logging
-from app.core.config import settings
-from app.models.schema import UserProfile, PageStyle, AudienceType, SalesGoal
+from core.config import settings
+from models.schema import UserProfile, PageStyle, AudienceType, SalesGoal
 
 logger = logging.getLogger(__name__)
 

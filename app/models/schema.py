@@ -3,7 +3,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime, timedelta
 from enum import Enum
-from app.core.db import Base
+from core.db import Base
 
 class PageStyle(str, Enum):
     SERIOUS = "جدی"

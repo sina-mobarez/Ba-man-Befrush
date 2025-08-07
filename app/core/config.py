@@ -1,4 +1,5 @@
-from pydantic import BaseSettings, field_validator
+from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from typing import Optional
 import logging
 

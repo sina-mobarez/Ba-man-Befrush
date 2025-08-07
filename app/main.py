@@ -5,10 +5,10 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from contextlib import asynccontextmanager
 
-from app.core.config import settings
-from app.core.logging_setup import setup_logging
-from app.core.db import Database
-from app.handlers.common import register_handlers
+from core.config import settings
+from core.logging_setup import setup_logging
+from core.db import Database
+from handlers.common import register_handlers
 
 # Setup logging
 setup_logging(settings.LOG_LEVEL)

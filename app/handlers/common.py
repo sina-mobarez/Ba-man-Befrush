@@ -6,14 +6,14 @@ from aiogram.fsm.state import State, StatesGroup
 from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
-from app.core.config import settings
-from app.services.ai_service import AIService
-from app.services.user_service import UserService
-from app.keyboards.builders import (
+from core.config import settings
+from services.ai_service import AIService
+from services.user_service import UserService
+from keyboards.builders import (
     get_main_menu, get_content_type_keyboard, get_profile_setup_keyboard,
     get_profile_edit_keyboard, get_payment_keyboard, get_back_keyboard
 )
-from app.models.schema import PageStyle, AudienceType, SalesGoal, ContentType
+from models.schema import PageStyle, AudienceType, SalesGoal, ContentType
 
 logger = logging.getLogger(__name__)
 
