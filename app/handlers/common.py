@@ -134,7 +134,8 @@ async def cmd_profile(message: Message, user_service: UserService):
 async def handle_style_selection(callback: CallbackQuery, state: FSMContext):
     """Handle style selection"""
     try:
-        style_name = callback.data.split("_")[1].upper()
+        parts = callback.data.split("_")
+        style_name = "_".join(parts[1:]).upper() 
         style = PageStyle[style_name]
         
         await state.update_data(page_style=style)
@@ -154,7 +155,8 @@ async def handle_style_selection(callback: CallbackQuery, state: FSMContext):
 async def handle_audience_selection(callback: CallbackQuery, state: FSMContext):
     """Handle audience selection"""
     try:
-        audience_name = callback.data.split("_")[1].upper()
+        parts = callback.data.split("_")
+        audience_name = "_".join(parts[1:]).upper() 
         audience = AudienceType[audience_name]
         
         await state.update_data(audience_type=audience)
@@ -174,7 +176,8 @@ async def handle_audience_selection(callback: CallbackQuery, state: FSMContext):
 async def handle_goal_selection(callback: CallbackQuery, state: FSMContext, user_service: UserService):
     """Handle goal selection"""
     try:
-        goal_name = callback.data.split("_")[1].upper()
+        parts = callback.data.split("_")
+        goal_name = "_".join(parts[1:]).upper() 
         goal = SalesGoal[goal_name]
         
         data = await state.get_data()
@@ -521,7 +524,7 @@ async def handle_help(message: Message):
 • پرداخت ماهانه یا فصلی
 • مشاهده وضعیت اشتراک
 
-📞 پشتیبانی: @sinaMobarez
+📞 پشتیبانی: @rez77
     """
     
     await message.answer(help_text.strip())

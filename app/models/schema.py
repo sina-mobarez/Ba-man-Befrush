@@ -61,7 +61,7 @@ class UserProfile(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
-    page_style = Column(SQLEnum(PageStyle), default=PageStyle.FRIENDLY)
+    page_style = Column(SQLEnum(PageStyle), nullable=True)
     audience_type = Column(SQLEnum(AudienceType), default=AudienceType.GENERAL)
     sales_goal = Column(SQLEnum(SalesGoal), default=SalesGoal.INCREASE_SALES)
     
