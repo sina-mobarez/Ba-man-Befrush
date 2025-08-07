@@ -2,7 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from typing import Optional
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from models.schema import User, UserProfile, Subscription, ContentHistory, SubscriptionStatus
 from core.config import settings
@@ -22,7 +22,7 @@ class UserService:
         
         if user:
             # Update last activity
-            user.last_activity = datetime.now()
+            user.last_activity = datetime.now(timezone.utc)
             await self.db.commit()
             return user
         
@@ -132,14 +132,14 @@ class UserService:
                 return False
             
             # Extend from current expiry or now, whichever is later
-            extend_from = max(subscription.expires_at, datetime.now())
+            extend_from = max(subscription.expires_at, datetime.now(timezone.utc))
             new_expiry = extend_from + timedelta(days=30 * months)
             
             subscription.expires_at = new_expiry
             subscription.status = SubscriptionStatus.ACTIVE
             subscription.payment_amount = payment_amount
             subscription.payment_reference = payment_reference
-            subscription.updated_at = datetime.now()
+            subscription.updated_at = datetime.now(timezone.utc)
             
             await self.db.commit()
             return True
@@ -152,7 +152,7 @@ class UserService:
         """Get user's content generation count in last N days"""
         from datetime import timedelta
         
-        cutoff_date = datetime.now() - timedelta(days=days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         stmt = select(ContentHistory).where(
             ContentHistory.user_id == user_id,
             ContentHistory.created_at >= cutoff_date

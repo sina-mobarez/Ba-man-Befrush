@@ -5,6 +5,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from contextlib import asynccontextmanager
 
+from middlewares.db_middleware import DbSessionMiddleware
 from core.config import settings
 from core.logging_setup import setup_logging
 from core.db import Database

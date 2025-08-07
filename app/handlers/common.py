@@ -3,7 +3,6 @@ from aiogram.filters import Command, StateFilter
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
 from core.config import settings
@@ -39,29 +38,11 @@ class ProfileEdit(StatesGroup):
 # Create router
 router = Router()
 
-# Dependency injection helpers
-async def get_db_session() -> AsyncSession:
-    """Get database session - this should be injected properly"""
-    # This is a placeholder - in real implementation, this would be injected
-    from app.core.config import settings
-    from app.core.db import Database
-    
-    db = Database(settings.DATABASE_URL)
-    async for session in db.get_session():
-        return session
-
-async def get_user_service(message: Message) -> UserService:
-    """Get user service with database session"""
-    db_session = await get_db_session()
-    return UserService(db_session)
-
 # Command handlers
 @router.message(Command("start"))
-async def cmd_start(message: Message, state: FSMContext):
+async def cmd_start(message: Message, state: FSMContext, user_service: UserService):
     """Handle /start command"""
     try:
-        user_service = await get_user_service(message)
-        
         # Create or get user
         user = await user_service.get_or_create_user(
             telegram_id=message.from_user.id,
@@ -117,10 +98,9 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer("خطایی رخ داده است. لطفاً دوباره تلاش کنید.")
 
 @router.message(Command("profile"))
-async def cmd_profile(message: Message):
+async def cmd_profile(message: Message, user_service: UserService):
     """Handle /profile command"""
     try:
-        user_service = await get_user_service(message)
         user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
         profile = await user_service.get_user_profile(user.id)
         
@@ -191,7 +171,7 @@ async def handle_audience_selection(callback: CallbackQuery, state: FSMContext):
         await callback.answer("خطایی رخ داده است.")
 
 @router.callback_query(F.data.startswith("goal_"))
-async def handle_goal_selection(callback: CallbackQuery, state: FSMContext):
+async def handle_goal_selection(callback: CallbackQuery, state: FSMContext, user_service: UserService):
     """Handle goal selection"""
     try:
         goal_name = callback.data.split("_")[1].upper()
@@ -201,7 +181,6 @@ async def handle_goal_selection(callback: CallbackQuery, state: FSMContext):
         data['sales_goal'] = goal
         
         # Save profile
-        user_service = await get_user_service(callback.message)
         user = await user_service.get_or_create_user(telegram_id=callback.from_user.id)
         
         success = await user_service.update_user_profile(
@@ -244,10 +223,9 @@ async def handle_goal_selection(callback: CallbackQuery, state: FSMContext):
 
 # Main menu handlers
 @router.message(F.text == "🧠 تولید محتوا")
-async def handle_content_generation(message: Message, state: FSMContext):
+async def handle_content_generation(message: Message, state: FSMContext, user_service: UserService):
     """Handle content generation menu"""
     try:
-        user_service = await get_user_service(message)
         user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
         
         # Check subscription
@@ -302,14 +280,13 @@ async def handle_visual_request(message: Message, state: FSMContext):
 
 # Content generation handlers
 @router.message(StateFilter(ContentGeneration.waiting_for_caption_input))
-async def generate_captions(message: Message, state: FSMContext):
+async def generate_captions(message: Message, state: FSMContext, user_service: UserService):
     """Generate captions for user input"""
     if message.text == "🔙 بازگشت":
         await back_to_main_menu(message, state)
         return
     
     try:
-        user_service = await get_user_service(message)
         user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
         profile = await user_service.get_user_profile(user.id)
         
@@ -355,14 +332,13 @@ async def generate_captions(message: Message, state: FSMContext):
         await message.answer("خطا در تولید کپشن. لطفاً دوباره تلاش کنید.")
 
 @router.message(StateFilter(ContentGeneration.waiting_for_reels_input))
-async def generate_reels_scenarios(message: Message, state: FSMContext):
+async def generate_reels_scenarios(message: Message, state: FSMContext, user_service: UserService):
     """Generate reels scenarios"""
     if message.text == "🔙 بازگشت":
         await back_to_main_menu(message, state)
         return
     
     try:
-        user_service = await get_user_service(message)
         user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
         profile = await user_service.get_user_profile(user.id)
         
@@ -405,14 +381,13 @@ async def generate_reels_scenarios(message: Message, state: FSMContext):
         await message.answer("خطا در تولید سناریو ریلز. لطفاً دوباره تلاش کنید.")
 
 @router.message(StateFilter(ContentGeneration.waiting_for_visual_input))
-async def generate_visual_ideas(message: Message, state: FSMContext):
+async def generate_visual_ideas(message: Message, state: FSMContext, user_service: UserService):
     """Generate visual ideas"""
     if message.text == "🔙 بازگشت":
         await back_to_main_menu(message, state)
         return
     
     try:
-        user_service = await get_user_service(message)
         user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
         profile = await user_service.get_user_profile(user.id)
         
@@ -456,10 +431,9 @@ async def generate_visual_ideas(message: Message, state: FSMContext):
 
 # Subscription handlers
 @router.message(F.text == "🔁 تمدید اشتراک")
-async def handle_subscription_renewal(message: Message):
+async def handle_subscription_renewal(message: Message, user_service: UserService):
     """Handle subscription renewal"""
     try:
-        user_service = await get_user_service(message)
         user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
         subscription = await user_service.get_user_subscription(user.id)
         
@@ -511,10 +485,9 @@ async def handle_payment_selection(callback: CallbackQuery):
 
 # Utility handlers
 @router.message(F.text == "🔙 بازگشت")
-async def back_to_main_menu(message: Message, state: FSMContext):
+async def back_to_main_menu(message: Message, state: FSMContext, user_service: UserService):
     """Return to main menu"""
     try:
-        user_service = await get_user_service(message)
         user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
         subscription = await user_service.get_user_subscription(user.id)
         is_subscribed = subscription.is_active if subscription else False
