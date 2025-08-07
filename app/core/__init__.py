@@ -1,0 +1,1 @@
+"""Core components for the AI Jewelry Bot"""
