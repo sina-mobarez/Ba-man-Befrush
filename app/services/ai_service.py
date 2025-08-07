@@ -8,9 +8,35 @@ logger = logging.getLogger(__name__)
 
 class AIService:
     def __init__(self):
-        openai.api_key = settings.OPENROUTER_API_KEY
-        openai.api_base = "https://openrouter.ai/api/v1"
-    
+        """
+        Initializes the AI service with the modern OpenAI client.
+        """
+        # MODIFIED: Create an instance of the AsyncOpenAI client
+        self.client = openai.AsyncOpenAI(
+            api_key=settings.OPENROUTER_API_KEY,
+            base_url="https://openrouter.ai/api/v1",
+        )
+        logger.info("AIService initialized with OpenRouter client.")
+
+    async def _call_ai(self, system_prompt: str, user_prompt: str) -> str:
+        """
+        Calls the OpenRouter AI API using the modern openai>=1.0.0 syntax.
+        """
+        try:
+            response = await self.client.chat.completions.create(
+                model="openai/gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.8,
+                max_tokens=2000
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error(f"OpenRouter API error: {e}", exc_info=True)
+            raise
+
     async def generate_caption(
         self,
         product_description: str,
@@ -18,11 +44,10 @@ class AIService:
         additional_context: Optional[str] = None
     ) -> List[str]:
         """Generate 3 captions for a product"""
-        
         style_prompt = self._get_style_prompt(user_profile.page_style)
         audience_prompt = self._get_audience_prompt(user_profile.audience_type)
         goal_prompt = self._get_goal_prompt(user_profile.sales_goal)
-        
+
         system_prompt = f"""
         تو یک متخصص بازاریابی طلا و جواهرات هستی که برای صفحات اینستاگرام فارسی کپشن می‌نویسی.
         
@@ -47,12 +72,11 @@ class AIService:
         
         لطفاً 3 کپشن مختلف برای این محصول بنویس.
         """
-        
+
         try:
             response = await self._call_ai(system_prompt, user_prompt)
             captions = self._parse_numbered_content(response, 3)
             return captions
-            
         except Exception as e:
             logger.error(f"Error generating captions: {e}")
             return ["خطا در تولید کپشن. لطفاً دوباره تلاش کنید."]
@@ -64,7 +88,6 @@ class AIService:
         occasion: Optional[str] = None
     ) -> List[str]:
         """Generate Instagram Reels scenarios"""
-        
         style_prompt = self._get_style_prompt(user_profile.page_style)
         audience_prompt = self._get_audience_prompt(user_profile.audience_type)
         
@@ -93,11 +116,10 @@ class AIService:
             response = await self._call_ai(system_prompt, user_prompt)
             scenarios = self._parse_numbered_content(response, 3)
             return scenarios
-            
         except Exception as e:
             logger.error(f"Error generating reels scenarios: {e}")
             return ["خطا در تولید سناریو ریلز. لطفاً دوباره تلاش کنید."]
-    
+
     async def generate_visual_ideas(
         self,
         product_type: str,
@@ -105,7 +127,6 @@ class AIService:
         available_props: Optional[str] = None
     ) -> List[str]:
         """Generate visual ideas for photography"""
-        
         style_prompt = self._get_style_prompt(user_profile.page_style)
         
         system_prompt = f"""
@@ -132,28 +153,10 @@ class AIService:
             response = await self._call_ai(system_prompt, user_prompt)
             ideas = self._parse_numbered_content(response, 3)
             return ideas
-            
         except Exception as e:
             logger.error(f"Error generating visual ideas: {e}")
             return ["خطا در تولید ایده بصری. لطفاً دوباره تلاش کنید."]
-    
-    async def _call_ai(self, system_prompt: str, user_prompt: str) -> str:
-        """Call OpenRouter AI API"""
-        try:
-            response = await openai.ChatCompletion.acreate(
-                model="openai/gpt-4o-mini",  # or "anthropic/claude-3-haiku"
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.8,
-                max_tokens=2000
-            )
-            return response.choices[0].message.content.strip()
-        except Exception as e:
-            logger.error(f"OpenRouter API error: {e}")
-            raise
-    
+
     def _parse_numbered_content(self, content: str, expected_count: int) -> List[str]:
         """Parse numbered content from AI response"""
         lines = content.strip().split('\n')
@@ -172,7 +175,6 @@ class AIService:
         if current_item:
             parsed_content.append(current_item.strip())
         
-        # If parsing failed, split by double newlines
         if len(parsed_content) < expected_count:
             chunks = content.split('\n\n')
             parsed_content = [chunk.strip() for chunk in chunks if chunk.strip()]
@@ -198,7 +200,7 @@ class AIService:
             AudienceType.GENERAL: "عموم مردم"
         }
         return audience_prompts.get(audience, "عموم مردم")
-    
+
     def _get_goal_prompt(self, goal: SalesGoal) -> str:
         """Get goal-specific prompt"""
         goal_prompts = {

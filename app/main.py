@@ -1,71 +1,70 @@
 import asyncio
 import logging
+
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from contextlib import asynccontextmanager
+from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
-from middlewares.db_middleware import DbSessionMiddleware
 from core.config import settings
-from core.logging_setup import setup_logging
 from core.db import Database
-from handlers.common import register_handlers
+from core.logging_setup import setup_logging
+from handlers.common import router as common_router
+from middlewares.db_middleware import DbSessionMiddleware
+from services.ai_service import AIService
 
-# Setup logging
+
 setup_logging(settings.LOG_LEVEL)
 logger = logging.getLogger(__name__)
 
-# Global database instance
-db: Database = None
 
-@asynccontextmanager
-async def lifespan():
-    """Application lifespan manager"""
-    global db
+async def main() -> None:
+    """
+    Main function to initialize and run the bot.
+    This function sets up the database, services, dispatcher, and starts polling.
+    """
     
-    # Startup
-    logger.info("Starting AI Jewelry Bot...")
-    
-    # Initialize database
-    db = Database(settings.DATABASE_URL)
+    # 1. Initialize Database and Session Factory
+    logger.info("Initializing database connection...")
+    db = Database(url=settings.DATABASE_URL)
     await db.create_tables()
-    logger.info("Database initialized")
-    
-    try:
-        yield
-    finally:
-        # Cleanup
-        if db:
-            await db.close()
-        logger.info("Bot stopped")
+    session_maker: async_sessionmaker[AsyncSession] = db.session_factory
 
-async def main():
-    """Main function to run the bot"""
-    
-    # Create bot and dispatcher
+    # 2. Initialize Services (as singletons)
+    logger.info("Initializing services...")
+    ai_service = AIService()
+
+    # 3. Initialize Bot and Dispatcher
     bot = Bot(
         token=settings.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
-    
     dp = Dispatcher()
-    
-    # Register handlers
-    router = register_handlers()
-    dp.include_router(router)
-    
-    # Use lifespan manager
-    async with lifespan():
-        
-        # Start bot
-        if settings.WEBHOOK_HOST:
-            # Webhook mode
-            logger.info(f"Starting bot with webhook: {settings.WEBHOOK_HOST}{settings.WEBHOOK_PATH}")
-            await dp.start_polling(bot, skip_updates=True)
-        else:
-            # Polling mode
-            logger.info("Starting bot with polling...")
-            await dp.start_polling(bot, skip_updates=True)
+
+    # 4. Register Middleware
+    # The DbSessionMiddleware is crucial for providing a clean database session to each handler.
+    dp.update.middleware(DbSessionMiddleware(session_pool=session_maker))
+
+    # 5. Register Routers
+    # All handlers from your 'handlers' package will be included.
+    dp.include_router(common_router)
+
+    # 6. Start Polling
+    # The 'ai_service' is passed here as a workflow data object, making it available
+    # to all handlers and middlewares. The UserService will be created on-the-fly
+    # by a middleware that depends on the session from DbSessionMiddleware.
+    logger.info("Starting bot with polling...")
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot, ai_service=ai_service)
+    finally:
+        # Graceful shutdown
+        logger.info("Stopping bot and closing database connection...")
+        await bot.session.close()
+        await db.close()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Bot stopped by user.")

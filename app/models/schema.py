@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, ForeignKey, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from core.db import Base
 
@@ -99,12 +99,12 @@ class Subscription(Base):
         return cls(
             user_id=user_id,
             status=SubscriptionStatus.TRIAL,
-            expires_at=datetime.now() + timedelta(days=trial_days)
+            expires_at=datetime.now(timezone.utc) + timedelta(days=trial_days)
         )
     
     @property
     def is_active(self) -> bool:
-        return self.expires_at > datetime.now() and self.status in [SubscriptionStatus.TRIAL, SubscriptionStatus.ACTIVE]
+        return self.expires_at > datetime.now(timezone.utc) and self.status in [SubscriptionStatus.TRIAL, SubscriptionStatus.ACTIVE]
 
 class ContentHistory(Base):
     __tablename__ = "content_history"
