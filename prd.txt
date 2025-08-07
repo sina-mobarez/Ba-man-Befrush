@@ -1,0 +1,225 @@
+**Product Name:**
+AI Content Agent for Jewelry Industry
+**Platform:**
+Telegram Bot (Persian language)
+**Owner:**
+@sinaMobarez
+**Target Users:**
+
+* Online jewelry sellers
+* Jewelry designers and manufacturers
+* Instagram influencers in the gold/jewelry space
+* Students of jewelry marketing and sales courses
+
+---
+
+## 1. 🎯 Purpose & Goals
+
+The purpose of this bot is to empower jewelry industry professionals in Iran and Farsi-speaking regions to:
+
+* Generate viral and engaging content with AI
+* Save time in ideation, writing, and visual planning
+* Personalize their brand voice and customer communication
+* Grow sales via effective content strategies
+
+---
+
+## 2. 🧑‍💼 Business Objectives
+
+* Offer a 30-day free trial to onboard users quickly
+* Enable monthly or seasonal subscriptions via Iranian payment gateways
+* Learn user behavior over time to generate more relevant content
+* Serve as a virtual assistant for social media growth and content planning
+
+---
+
+## 3. 🎯 Target Audience
+
+| Segment          | Description                                                    |
+| ---------------- | -------------------------------------------------------------- |
+| فروشندگان آنلاین | Instagram shops, Telegram sellers, local ecommerce             |
+| طراحان/سازندگان  | Content creation support for artisans and small manufacturers  |
+| پیج‌های فعال     | Pages seeking growth via high-engagement reels, captions       |
+| کارآموزان        | Learners looking to practice or launch online jewelry business |
+
+---
+
+## 4. 🧩 Core Features
+
+### 4.1 🧠 AI Content Assistant (Agent)
+
+* Uses OpenRouter.ai to access GPT model (supports Farsi prompts)
+* Smart content generation tailored to each user's profile
+
+### 4.2 🎛️ User Profile (شخصی‌سازی)
+
+Each user has a dynamic, editable profile:
+
+* Page style (جدی، شوخ‌طبع، لوکس، سنتی)
+* Audience type (جوانان، لاکچری، عروس‌ها)
+* Sales goals (افزایش فروش، آگاهی از برند، تعامل بیشتر)
+
+**Editable via UI or command:**
+`/profile`
+
+### 4.3 ✍️ Caption Generator (کپشن‌نویسی)
+
+* Suggests 3 persuasive captions per product or theme
+* Style and tone match user profile
+* Includes CTA (Call To Action) suggestions
+
+### 4.4 🧾 Reels Scenario Generator (سناریو ریلز)
+
+* Generates ideas for Instagram Reels based on:
+
+  * فروش ویژه
+  * مناسبت‌ها (عید، شب یلدا، ولنتاین...)
+  * ترندهای بصری
+
+### 4.5 📷 Visual Idea Generator (ایده بصری)
+
+* Suggests photo/video setups using available props
+* Recommendations based on type of product (دستبند، حلقه، سرویس)
+
+### 4.6 🔁 Profile Update
+
+* Users can update their profile at any time via `/update_profile` or buttons
+
+### 4.7 📊 Contextual Learning
+
+* The bot learns user behavior from their messages
+* Future content is fine-tuned to better match preferences
+* Uses prompt-chaining and long-term context (stored in DB)
+
+---
+
+## 5. 💳 Subscription & Access Control
+
+### 5.1 Trial Plan
+
+* 30 days of full access on registration
+* No payment required initially
+
+### 5.2 Paid Plan
+
+* Subscription required after 30 days
+* Monthly or seasonal plans
+* Manual renewal via پیام تمدید
+
+### 5.3 Payment Gateway
+
+* Integration with زرین‌پال or IDPay for manual renewal
+* Generates payment link and waits for confirmation
+
+---
+
+## 6. 🌐 User Interface & UX
+
+### 6.1 Menus & Buttons (همه فارسی)
+
+* Reply keyboards for interaction
+* Dynamic UI changes based on user plan/status
+* Sample Main Menu:
+
+  ```
+  🧠 تولید محتوا
+  🎛️ ویرایش پروفایل
+  🔁 تمدید اشتراک
+  ```
+
+### 6.2 Onboarding UX
+
+* Friendly welcome message
+* Prompts user to define style/profile
+* Sample:
+
+  ```
+  سلام! من دستیار هوش مصنوعی تولید محتوای شما هستم 💎  
+  اول بگید که سبک پیج‌تون چیه؟ (جدی / دوستانه / لوکس / سنتی)
+  ```
+
+---
+
+## 7. 📦 Technical Requirements
+
+### 7.1 Backend
+
+* Language: **Python 3.10+**
+* Framework: **aiogram v3** (async Telegram bot)
+* AI API: **OpenRouter.ai** (GPT-4o or Claude, with Persian support)
+* ORM: **SQLAlchemy** (async with asyncpg) or **Tortoise ORM**
+* Database: **PostgreSQL**
+* Optional: **Redis** (for caching session state or rate limiting)
+
+### 7.2 Hosting
+
+* **Ubuntu Server 22.04+**
+* Systemd service
+* Optional: Docker-based deployment
+
+### 7.3 Deployment Tools
+
+* `systemctl` for auto-start bot
+* UFW/Nginx for secure access if webhooks used
+* `cron` or scheduler to check expired users daily
+
+---
+
+## 8. 🔐 Data & Security
+
+* All data stored in PostgreSQL (user profile, preferences, usage history)
+* AI prompts are anonymized; no personal user data sent to OpenRouter
+* TLS-enabled webhook endpoint (if applicable)
+
+---
+
+## 9. 📈 Future Features (V2+)
+
+* Admin panel with usage stats
+* Auto-scheduled content suggestions via cron
+* Image generation (DALL·E or Stable Diffusion)
+* Voice note input for Persian prompt-to-text
+* Real-time analytics for user performance
+* Referral system for viral user growth
+
+---
+
+## 10. 🧪 Success Metrics (KPIs)
+
+| Metric             | Target                                |
+| ------------------ | ------------------------------------- |
+| Activation Rate    | >70% of users complete profile        |
+| Retention (Day 30) | >30% convert to paid                  |
+| Content Generation | Avg. 5+ prompts per week/user         |
+| Viral Reach        | 1000+ users via referrals in 2 months |
+| UX Feedback Score  | >85% satisfaction (optional survey)   |
+
+
+## 11. Recommended Structure
+/ai-jewelry-bot/
+├── app/
+│   ├── __init__.py
+│   ├── handlers/            # Bot command and message handlers (e.g., start, profile)
+│   │   ├── __init__.py
+│   │   └── common.py
+│   ├── services/            # Business logic (e.g., interacting with AI, managing users)
+│   │   ├── __init__.py
+│   │   ├── ai_service.py
+│   │   └── user_service.py
+│   ├── models/              # SQLAlchemy database models
+│   │   ├── __init__.py
+│   │   └── schema.py
+│   ├── keyboards/           # UI components (ReplyKeyboards, InlineKeyboards)
+│   │   ├── __init__.py
+│   │   └── builders.py
+│   ├── core/                # Core components (config, logging, db session)
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   ├── logging_setup.py
+│   │   └── db.py
+│   └── main.py              # Main application entry point
+├── tests/                   # Unit and integration tests
+├── .env.example             # Example environment variables
+├── requirements.txt         # Project dependencies
+└── README.md                # Project documentation
+---
