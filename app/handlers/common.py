@@ -34,6 +34,7 @@ class OnboardingStates(StatesGroup):
     waiting_for_physical_store = State()
     waiting_for_additional_info = State()
     waiting_for_summary_confirm = State()
+    waiting_for_subscription_decision = State()
 
 class ContentGeneration(StatesGroup):
     waiting_for_content_type = State()
@@ -436,27 +437,134 @@ async def handle_additional_info(message: Message, state: FSMContext, user_servi
         logger.error(f"Error in additional info handler: {e}")
         await message.answer("خطایی رخ داده است.")
 
-@router.callback_query(F.data.in_("confirm_yes", "confirm_no"))
+@router.callback_query(F.data.in_({"confirm_yes", "confirm_no"}))
 async def handle_summary_confirmation(callback: CallbackQuery, state: FSMContext, user_service: UserService):
     try:
+        logger.info(f"Starting summary confirmation for user {callback.from_user.id}")
+        logger.info(f"Callback data: {callback.data}")
+        logger.info(f"State: {state}")
+        logger.info(f"UserService type: {type(user_service)}")
+        logger.info(f"UserService: {user_service}")
+        
+        # Ensure we have a valid user_service
+        if not user_service:
+            logger.error("UserService not available in callback handler")
+            await callback.answer("خطا در سرویس کاربری.")
+            return
+            
+        logger.info("Getting user by telegram ID...")
         user = await user_service.get_user_by_telegram_id(callback.from_user.id)
+        if not user:
+            await callback.answer("کاربر یافت نشد.")
+            return
+            
+        logger.info(f"User found: {user.id}")
         approved = callback.data == "confirm_yes"
-        # Save summary and complete onboarding if approved
+        
         if approved:
+            logger.info("User approved, getting profile...")
+            # Get user profile and ensure it exists
             profile = await user_service.get_user_profile(user.id)
-            await user_service.update_profile_summary_and_complete(user.id, profile.situation_summary or "", True)
-            upsell = (
-                "حالا من سه تا سناریو بهت میدم، کلمه به کلمه و تصویر به تصویر.\n"
-                "اگر از این سه تا سناریو راضی بودی، می‌تونی با پرداخت فقط 980,000 تومان من رو استخدام کنی تا هرماه تقویم محتوایی دقیق ریلزها رو بهت بدم."
+            if not profile:
+                logger.info("Profile not found, creating one...")
+                # Create profile if it doesn't exist
+                await user_service.update_user_profile(user.id, gallery_name="گالری جدید")
+                profile = await user_service.get_user_profile(user.id)
+            
+            logger.info("Generating AI summary...")
+            # Generate summary using AI
+            try:
+                ai_service = AIService()
+                summary = await ai_service.generate_situation_summary(profile)
+                logger.info("AI summary generated successfully")
+            except Exception as e:
+                logger.error(f"Error generating summary: {e}")
+                summary = "خلاصه وضعیت بر اساس اطلاعات موجود"
+            
+            logger.info("Saving profile summary...")
+            # Save summary and complete onboarding
+            success = await user_service.update_profile_summary_and_complete(user.id, summary, True)
+            if not success:
+                await callback.answer("خطا در ذخیره اطلاعات.")
+                return
+            
+            logger.info("Generating AI scenarios...")
+            # Generate 3 reels scenarios using AI
+            try:
+                scenarios = await ai_service.generate_reels_scenario(
+                    theme="معرفی گالری طلا و جواهرات",
+                    user_profile=profile
+                )
+                logger.info("AI scenarios generated successfully")
+            except Exception as e:
+                logger.error(f"Error generating scenarios: {e}")
+                scenarios = [
+                    "سناریو 1: معرفی گالری با نمایش محصولات",
+                    "سناریو 2: آموزش انتخاب طلا",
+                    "سناریو 3: نمایش کارهای سفارشی"
+                ]
+            
+            logger.info("Saving scenarios to history...")
+            # Save scenarios to history
+            scenarios_text = "\n\n---\n\n".join(scenarios)
+            await user_service.save_content_history(
+                user.id,
+                ContentType.REELS,
+                "onboarding_scenarios",
+                scenarios_text
             )
-            await callback.message.edit_text(upsell)
-            await callback.message.answer("برای ادامه یک گزینه را انتخاب کنید:", reply_markup=get_payment_keyboard())
+            
+            logger.info("Showing scenarios to user...")
+            # Show scenarios
+            scenarios_message = "🎬 سناریوهای ریلز پیشنهادی:\n\n"
+            for i, scenario in enumerate(scenarios, 1):
+                scenarios_message += f"سناریو {i}:\n{scenario}\n\n---\n\n"
+            
+            await callback.message.edit_text(scenarios_message.strip())
+            
+            logger.info("Asking for subscription decision...")
+            # Ask for subscription decision
+            subscription_question = (
+                "حالا من سه تا سناریو بهت دادم، کلمه به کلمه و تصویر به تصویر.\n"
+                "اگر از این سه تا سناریو راضی بودی، می‌تونی با پرداخت فقط 980,000 تومان من رو استخدام کنی تا هرماه تقویم محتوایی دقیق ریلزها رو بهت بدم.\n\n"
+                "آیا می‌خواهید اشتراک تهیه کنید؟"
+            )
+            
+            await callback.message.answer(
+                subscription_question,
+                reply_markup=get_confirmation_keyboard()
+            )
+            
+            await state.set_state(OnboardingStates.waiting_for_subscription_decision)
+            logger.info("Summary confirmation completed successfully")
+            
         else:
             await callback.message.edit_text("باشه، هرجایی نیاز بود اصلاح کن و دوباره ادامه بده.")
-        await state.clear()
+            await state.clear()
+        
         await callback.answer()
+        
     except Exception as e:
         logger.error(f"Error in summary confirmation: {e}")
+        await callback.answer("خطایی رخ داده است.")
+
+@router.callback_query(F.data.in_({"confirm_yes", "confirm_no"}), StateFilter(OnboardingStates.waiting_for_subscription_decision))
+async def handle_subscription_decision(callback: CallbackQuery, state: FSMContext):
+    try:
+        wants_subscription = callback.data == "confirm_yes"
+        
+        if wants_subscription:
+            await callback.message.edit_text("عالی! برای ادامه یکی از گزینه‌های پرداخت را انتخاب کنید:")
+            await callback.message.answer("گزینه پرداخت:", reply_markup=get_payment_keyboard())
+        else:
+            await callback.message.edit_text("باشه، هر وقت خواستی می‌تونی از منوی اصلی اشتراک تهیه کنی.")
+            await callback.message.answer("بازگشت به منوی اصلی", reply_markup=get_main_menu(False))
+        
+        await state.clear()
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"Error in subscription decision: {e}")
         await callback.answer("خطایی رخ داده است.")
 
 @router.callback_query(F.data.startswith("goal_"))
@@ -491,7 +599,7 @@ async def handle_goal_selection(callback: CallbackQuery, state: FSMContext, user
 👥 مخاطب: {data['audience_type'].value}  
 🎯 هدف: {goal.value}
 
-حالا می‌تونید شروع کنید و محتوای فوق‌العاده تولید کنید! 🚀
+حالا می‌تونی شروع کنی و محتوای فوق‌العاده تولید کنی! 🚀
 
 {f"🎁 شما {settings.TRIAL_DAYS} روز آزمایشی دارید." if is_subscribed else ""}
             """

@@ -104,28 +104,45 @@ class UserService:
     async def update_profile_summary_and_complete(self, user_id: int, summary: str, approved: bool) -> bool:
         """Save summary and optionally mark onboarding completed"""
         try:
+            logger.info(f"Starting to update profile summary for user {user_id}")
+            logger.info(f"Database session type: {type(self.db)}")
+            logger.info(f"Database session state: {self.db.is_active if hasattr(self.db, 'is_active') else 'Unknown'}")
+            
             # Save summary
             stmt = (
                 update(UserProfile)
                 .where(UserProfile.user_id == user_id)
-                .set({
+                .values({
                     UserProfile.situation_summary: summary,
                     UserProfile.summary_approved: approved
                 })
             )
+            logger.info("Executing profile update statement...")
             await self.db.execute(stmt)
+            
             # Mark user onboarding completed
             if approved:
-                await self.db.execute(
+                logger.info("Marking user onboarding as completed...")
+                user_stmt = (
                     update(User)
                     .where(User.id == user_id)
                     .values(onboarding_completed=True)
                 )
+                await self.db.execute(user_stmt)
+            
+            logger.info("Committing changes...")
             await self.db.commit()
+            logger.info("Profile summary update completed successfully")
             return True
+            
         except Exception as e:
             logger.error(f"Error saving profile summary for user {user_id}: {e}")
-            await self.db.rollback()
+            logger.error(f"Error type: {type(e)}")
+            logger.error(f"Error details: {str(e)}")
+            try:
+                await self.db.rollback()
+            except Exception as rollback_error:
+                logger.error(f"Error during rollback: {rollback_error}")
             return False
 
     async def update_onboarding_step(self, user_id: int, step: OnboardingStep) -> bool:
