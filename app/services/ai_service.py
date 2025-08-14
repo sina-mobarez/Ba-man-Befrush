@@ -17,6 +17,8 @@ class AIService:
             base_url="https://openrouter.ai/api/v1",
         )
         logger.info("AIService initialized with OpenRouter client.")
+        self.last_prompt_name: Optional[str] = None
+        self.last_prompt_content: Optional[str] = None
 
     async def _call_ai(self, system_prompt: str, user_prompt: str) -> str:
         """
@@ -74,6 +76,8 @@ class AIService:
         """
 
         try:
+            self.last_prompt_name = "caption_generation"
+            self.last_prompt_content = f"SYSTEM:\n{system_prompt.strip()}\n\nUSER:\n{user_prompt.strip()}"
             response = await self._call_ai(system_prompt, user_prompt)
             captions = self._parse_numbered_content(response, 3)
             return captions
@@ -113,6 +117,8 @@ class AIService:
         """
         
         try:
+            self.last_prompt_name = "reels_generation"
+            self.last_prompt_content = f"SYSTEM:\n{system_prompt.strip()}\n\nUSER:\n{user_prompt.strip()}"
             response = await self._call_ai(system_prompt, user_prompt)
             scenarios = self._parse_numbered_content(response, 3)
             return scenarios
@@ -150,12 +156,55 @@ class AIService:
         """
         
         try:
+            self.last_prompt_name = "visual_ideas_generation"
+            self.last_prompt_content = f"SYSTEM:\n{system_prompt.strip()}\n\nUSER:\n{user_prompt.strip()}"
             response = await self._call_ai(system_prompt, user_prompt)
             ideas = self._parse_numbered_content(response, 3)
             return ideas
         except Exception as e:
             logger.error(f"Error generating visual ideas: {e}")
             return ["خطا در تولید ایده بصری. لطفاً دوباره تلاش کنید."]
+
+    async def generate_situation_summary(self, user_profile: UserProfile) -> str:
+        """Generate Persian situation summary from collected onboarding info"""
+        system_prompt = (
+            "تو یک استراتژیست محتوا برای طلافروشان هستی. از اطلاعات زیر خلاصه وضعیت ارائه بده: \n"
+            "- نقاط قوت/ضعف صفحه\n- پیشنهاد بهبود سریع\n- تیپ مخاطب\n- مسیر محتوا"
+        )
+        user_prompt = (
+            f"نام گالری: {user_profile.gallery_name}\n"
+            f"اینستاگرام: {user_profile.instagram_handle}\n"
+            f"تلگرام: {user_profile.telegram_channel}\n"
+            f"مشتریان اصلی: {user_profile.main_customers}\n"
+            f"باید و نبایدها: {user_profile.constraints_and_guidelines}\n"
+            f"کمک‌کننده محتوا: {user_profile.content_help}\n"
+            f"گالری حضوری: {user_profile.has_physical_store}\n"
+            f"اطلاعات اضافی: {user_profile.additional_info}\n"
+        )
+        try:
+            self.last_prompt_name = "situation_summary"
+            self.last_prompt_content = f"SYSTEM:\n{system_prompt.strip()}\n\nUSER:\n{user_prompt.strip()}"
+            return await self._call_ai(system_prompt, user_prompt)
+        except Exception:
+            return "خلاصه وضعیت آماده نشد. بعداً دوباره تلاش کنید."
+
+    async def generate_content_calendar(self, user_profile: UserProfile) -> List[str]:
+        """Generate a short 3-item content calendar suggestion"""
+        system_prompt = (
+            "تو یک برنامه‌ریز محتوا هستی. بر اساس اطلاعات زیر 3 ایده محتوایی زمان‌بندی شده بده."
+        )
+        user_prompt = (
+            f"مخاطب: {user_profile.main_customers}\n"
+            f"محدودیت‌ها: {user_profile.constraints_and_guidelines}\n"
+            f"سبک صفحه: {self._get_style_prompt(user_profile.page_style)}\n"
+        )
+        try:
+            self.last_prompt_name = "content_calendar"
+            self.last_prompt_content = f"SYSTEM:\n{system_prompt.strip()}\n\nUSER:\n{user_prompt.strip()}"
+            response = await self._call_ai(system_prompt, user_prompt)
+            return self._parse_numbered_content(response, 3)
+        except Exception:
+            return ["خطا در تولید تقویم."]
 
     def _parse_numbered_content(self, content: str, expected_count: int) -> List[str]:
         """Parse numbered content from AI response"""

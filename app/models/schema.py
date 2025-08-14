@@ -1,9 +1,11 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, ForeignKey, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, ForeignKey, Enum as SQLEnum, Float
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from core.db import Base
+import secrets
+import string
 
 class PageStyle(str, Enum):
     SERIOUS = "جدی"
@@ -31,6 +33,23 @@ class ContentType(str, Enum):
     CAPTION = "caption"
     REELS = "reels"
     VISUAL = "visual"
+    CALENDAR = "calendar"
+
+class OnboardingStep(str, Enum):
+    START = "start"
+    NAME = "name"
+    PHONE = "phone"
+    EMAIL = "email"
+    GALLERY_NAME = "gallery_name"
+    INSTAGRAM = "instagram"
+    TELEGRAM = "telegram"
+    CUSTOMERS = "customers"
+    CONSTRAINTS = "constraints"
+    HELP = "help"
+    PHYSICAL_STORE = "physical_store"
+    ADDITIONAL_INFO = "additional_info"
+    SUMMARY_CONFIRM = "summary_confirm"
+    COMPLETED = "completed"
 
 class User(Base):
     __tablename__ = "users"
@@ -41,7 +60,18 @@ class User(Base):
     first_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)
     phone = Column(String(20), nullable=True)
+    email = Column(String(255), nullable=True)
     language_code = Column(String(10), default="fa")
+    
+    # New fields for onboarding
+    display_name = Column(String(100), nullable=True)  # What to call them
+    onboarding_step = Column(SQLEnum(OnboardingStep), default=OnboardingStep.START)
+    onboarding_completed = Column(Boolean, default=False)
+    
+    # Referral system
+    referral_code = Column(String(10), unique=True, nullable=True)
+    referred_by_code = Column(String(10), nullable=True)
+    referral_count = Column(Integer, default=0)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -54,6 +84,12 @@ class User(Base):
     profile = relationship("UserProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
     subscription = relationship("Subscription", back_populates="user", uselist=False, cascade="all, delete-orphan")
     content_history = relationship("ContentHistory", back_populates="user", cascade="all, delete-orphan")
+    prompts_used = relationship("PromptHistory", back_populates="user", cascade="all, delete-orphan")
+    
+    def generate_referral_code(self):
+        """Generate unique referral code"""
+        if not self.referral_code:
+            self.referral_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
 
 class UserProfile(Base):
     __tablename__ = "user_profiles"
@@ -61,13 +97,28 @@ class UserProfile(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     
-    page_style = Column(SQLEnum(PageStyle), nullable=True)
-    audience_type = Column(SQLEnum(AudienceType), default=AudienceType.GENERAL)
-    sales_goal = Column(SQLEnum(SalesGoal), default=SalesGoal.INCREASE_SALES)
+    # Basic business info
+    gallery_name = Column(String(200), nullable=True)
+    instagram_handle = Column(String(100), nullable=True)
+    telegram_channel = Column(String(100), nullable=True)
     
+    # Customer analysis
+    main_customers = Column(Text, nullable=True)  # Description of main customers
+    constraints_and_guidelines = Column(Text, nullable=True)  # Dos and don'ts
+    content_help = Column(Text, nullable=True)  # Who helps with content
+    has_physical_store = Column(Boolean, nullable=True)
+    additional_info = Column(Text, nullable=True)
+    
+    # AI analysis
+    situation_summary = Column(Text, nullable=True)  # AI generated summary
+    summary_approved = Column(Boolean, default=False)
+    
+    # Old fields (keeping for compatibility)
+    page_style = Column(SQLEnum(PageStyle), nullable=True)
+    audience_type = Column(SQLEnum(AudienceType), nullable=True)
+    sales_goal = Column(SQLEnum(SalesGoal), nullable=True)
     business_name = Column(String(200), nullable=True)
     business_description = Column(Text, nullable=True)
-    instagram_handle = Column(String(100), nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -87,6 +138,8 @@ class Subscription(Base):
     
     payment_amount = Column(Integer, default=0)  # In tomans
     payment_reference = Column(String(100), nullable=True)
+    discount_applied = Column(Float, default=0.0)  # Discount percentage
+    discount_code = Column(String(50), nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -95,7 +148,7 @@ class Subscription(Base):
     user = relationship("User", back_populates="subscription")
     
     @classmethod
-    def create_trial(cls, user_id: int, trial_days: int = 30):
+    def create_trial(cls, user_id: int, trial_days: int = 3):  # Changed to 3 days for new flow
         return cls(
             user_id=user_id,
             status=SubscriptionStatus.TRIAL,
@@ -120,3 +173,44 @@ class ContentHistory(Base):
     
     # Relationships
     user = relationship("User", back_populates="content_history")
+
+class PromptHistory(Base):
+    """Track which prompts are used for content generation"""
+    __tablename__ = "prompt_history"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    prompt_name = Column(String(100), nullable=False)  # e.g. "viral_reels_analysis"
+    prompt_content = Column(Text, nullable=False)
+    usage_count = Column(Integer, default=1)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="prompts_used")
+
+class DiscountCode(Base):
+    """Discount codes for subscriptions"""
+    __tablename__ = "discount_codes"
+    
+    id = Column(Integer, primary_key=True)
+    code = Column(String(50), unique=True, nullable=False)
+    discount_percentage = Column(Float, nullable=False)  # 0.1 = 10%
+    max_uses = Column(Integer, default=100)
+    current_uses = Column(Integer, default=0)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    @property
+    def is_valid(self) -> bool:
+        if not self.is_active:
+            return False
+        if self.current_uses >= self.max_uses:
+            return False
+        if self.expires_at and self.expires_at < datetime.now(timezone.utc):
+            return False
+        return True

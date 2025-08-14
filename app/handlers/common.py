@@ -4,24 +4,36 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 import logging
+import re
 
 from core.config import settings
 from services.ai_service import AIService
 from services.user_service import UserService
 from keyboards.builders import (
-    get_main_menu, get_content_type_keyboard, get_profile_setup_keyboard,
-    get_profile_edit_keyboard, get_payment_keyboard, get_back_keyboard
+    get_start_keyboard, get_main_menu, get_content_type_keyboard, 
+    get_profile_edit_keyboard, get_payment_keyboard, get_back_keyboard,
+    get_confirmation_keyboard, get_discount_keyboard, get_onboarding_keyboard,
+    get_profile_setup_keyboard
 )
-from models.schema import PageStyle, AudienceType, SalesGoal, ContentType
+from models.schema import OnboardingStep, ContentType, SalesGoal, PageStyle, AudienceType
 
 logger = logging.getLogger(__name__)
 
 # States
-class ProfileSetup(StatesGroup):
-    waiting_for_style = State()
-    waiting_for_audience = State()
-    waiting_for_goal = State()
-    waiting_for_business_name = State()
+class OnboardingStates(StatesGroup):
+    waiting_for_ready = State()
+    waiting_for_name = State()
+    waiting_for_phone = State()
+    waiting_for_email = State()
+    waiting_for_gallery_name = State()
+    waiting_for_instagram = State()
+    waiting_for_telegram = State()
+    waiting_for_customers = State()
+    waiting_for_constraints = State()
+    waiting_for_help = State()
+    waiting_for_physical_store = State()
+    waiting_for_additional_info = State()
+    waiting_for_summary_confirm = State()
 
 class ContentGeneration(StatesGroup):
     waiting_for_content_type = State()
@@ -29,147 +41,422 @@ class ContentGeneration(StatesGroup):
     waiting_for_reels_input = State()
     waiting_for_visual_input = State()
 
-class ProfileEdit(StatesGroup):
-    editing_style = State()
-    editing_audience = State()
-    editing_goal = State()
-    editing_business = State()
+class DiscountStates(StatesGroup):
+    waiting_for_discount_code = State()
 
 # Create router
 router = Router()
 
-# Command handlers
+# Start command with referral support
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext, user_service: UserService):
-    """Handle /start command"""
+    """Handle /start command with referral code support"""
     try:
+        # Extract referral code from start parameter
+        referral_code = None
+        if message.text and len(message.text.split()) > 1:
+            referral_code = message.text.split()[1]
+        
         # Create or get user
         user = await user_service.get_or_create_user(
             telegram_id=message.from_user.id,
             username=message.from_user.username,
             first_name=message.from_user.first_name,
-            last_name=message.from_user.last_name
+            last_name=message.from_user.last_name,
+            referred_by_code=referral_code
         )
         
-        # Check if profile is complete
-        profile = await user_service.get_user_profile(user.id)
-        
-        if not profile or not profile.page_style:
-            welcome_text = """
-سلام! من دستیار هوش مصنوعی تولید محتوای شما هستم 💎
-
-برای شروع، لطفاً پروفایل خودتان را تکمیل کنید تا بتوانم محتوای مناسب‌تری برایتان تولید کنم.
-
-اول بگید که سبک پیج‌تون چیه؟
-            """
-            await message.answer(
-                welcome_text.strip(),
-                reply_markup=get_profile_setup_keyboard("style")
-            )
-            await state.set_state(ProfileSetup.waiting_for_style)
-        else:
+        # Check if onboarding is completed
+        if user.onboarding_completed:
             subscription = await user_service.get_user_subscription(user.id)
             is_subscribed = subscription.is_active if subscription else False
             
-            if is_subscribed:
-                welcome_back = f"""
-خوش برگشتید! 🎉
+            welcome_back = f"""
+سلام {user.display_name or user.first_name}! 👋
 
-آماده تولید محتوای فوق‌العاده برای کسب‌وکارتان هستم.
-اشتراک شما تا {subscription.expires_at.strftime('%Y/%m/%d')} فعال است.
+خوش برگشتی! آماده‌ام تا محتوای فوق‌العاده برای گالری‌ت تولید کنم.
 
-چه کاری می‌تونم برای شما انجام بدهم؟
-                """
-            else:
-                welcome_back = """
-خوش برگشتید! 
-
-دوره آزمایشی شما به پایان رسیده است. برای ادامه استفاده از خدمات، لطفاً اشتراک خود را تمدید کنید.
-                """
+{"🎯 اشتراک‌ت فعاله و می‌تونی از تمام امکانات استفاده کنی!" if is_subscribed else "⚠️ دوره آزمایشی‌ت تموم شده. برای ادامه، اشتراک تهیه کن."}
+            """
             
             await message.answer(
                 welcome_back.strip(),
                 reply_markup=get_main_menu(is_subscribed)
             )
             await state.clear()
-            
+            return
+        
+        # Start onboarding flow
+        welcome_text = """
+سلام! من دستیار محتوای طلافروش هستم 💎
+
+من سناریوهای ریلز اینستاگرامت رو کلمه به کلمه و تصویر به تصویر بهت میگم.
+
+سناریوهایی که براساس شرایط تو و اصول محتوانویسی و با آنالیز محتوای وایرال نوشته شده.
+
+برای شروع کار لازمه من یه سری اطلاعات از تو و گالری طلات داشته باشم تا در ادامه بتونم تقویم محتوایی و سناریو ریلزهات رو بهت بدم.
+
+اگه آماده‌ای بزن روی "آماده‌ام":
+        """
+        
+        if referral_code:
+            welcome_text += f"\n\n🎁 با کد معرف وارد شدی! ممنون که به خانواده ما پیوستی."
+        
+        await message.answer(
+            welcome_text.strip(),
+            reply_markup=get_start_keyboard()
+        )
+        
+        await user_service.update_onboarding_step(user.id, OnboardingStep.START)
+        await state.set_state(OnboardingStates.waiting_for_ready)
+        
     except Exception as e:
         logger.error(f"Error in start command: {e}")
         await message.answer("خطایی رخ داده است. لطفاً دوباره تلاش کنید.")
 
-@router.message(Command("profile"))
-async def cmd_profile(message: Message, user_service: UserService):
-    """Handle /profile command"""
+# Onboarding flow handlers
+@router.message(F.text == "آماده‌ام", StateFilter(OnboardingStates.waiting_for_ready))
+async def handle_ready(message: Message, state: FSMContext, user_service: UserService):
+    """Handle ready confirmation"""
     try:
-        user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
-        profile = await user_service.get_user_profile(user.id)
-        
-        if not profile:
-            await message.answer("پروفایل شما یافت نشد. لطفاً دوباره /start کنید.")
-            return
-        
-        profile_text = f"""
-📊 پروفایل شما:
-
-🎨 سبک پیج: {profile.page_style.value if profile.page_style else 'تنظیم نشده'}
-👥 نوع مخاطب: {profile.audience_type.value if profile.audience_type else 'تنظیم نشده'}
-🎯 هدف فروش: {profile.sales_goal.value if profile.sales_goal else 'تنظیم نشده'}
-
-{f"🏪 نام کسب‌وکار: {profile.business_name}" if profile.business_name else ""}
-{f"📝 توضیحات: {profile.business_description}" if profile.business_description else ""}
-{f"📱 اینستاگرام: @{profile.instagram_handle}" if profile.instagram_handle else ""}
-        """
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
         
         await message.answer(
-            profile_text.strip(),
-            reply_markup=get_profile_edit_keyboard()
+            "عالی! 🎉\n\nچی صدات کنم؟",
+            reply_markup=get_back_keyboard()
         )
         
+        await user_service.update_onboarding_step(user.id, OnboardingStep.NAME)
+        await state.set_state(OnboardingStates.waiting_for_name)
+        
     except Exception as e:
-        logger.error(f"Error in profile command: {e}")
-        await message.answer("خطایی رخ داده است. لطفاً دوباره تلاش کنید.")
+        logger.error(f"Error in ready handler: {e}")
+        await message.answer("خطایی رخ داده است.")
 
-# Profile setup handlers
-@router.callback_query(F.data.startswith("style_"))
-async def handle_style_selection(callback: CallbackQuery, state: FSMContext):
-    """Handle style selection"""
+@router.message(StateFilter(OnboardingStates.waiting_for_name))
+async def handle_name_input(message: Message, state: FSMContext, user_service: UserService):
+    """Handle name input"""
+    if message.text == "🔙 بازگشت":
+        await back_to_start(message, state)
+        return
+    
     try:
-        parts = callback.data.split("_")
-        style_name = "_".join(parts[1:]).upper() 
-        style = PageStyle[style_name]
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        await user_service.update_user_display_name(user.id, message.text)
         
-        await state.update_data(page_style=style)
-        
-        await callback.message.edit_text(
-            f"عالی! سبک «{style.value}» انتخاب شد.\n\nحالا بگید مخاطب اصلی‌تون کیان؟",
-            reply_markup=get_profile_setup_keyboard("audience")
+        await message.answer(
+            f"خیلی خوشحالم {message.text} جان! 😊\n\n"
+            "اگه مورد مهمی پیش اومد و میخواستم بهت پیام بدم، شمارت چنده؟",
+            reply_markup=get_onboarding_keyboard("skip")
         )
-        await state.set_state(ProfileSetup.waiting_for_audience)
-        await callback.answer()
+        
+        await user_service.update_onboarding_step(user.id, OnboardingStep.PHONE)
+        await state.set_state(OnboardingStates.waiting_for_phone)
         
     except Exception as e:
-        logger.error(f"Error in style selection: {e}")
-        await callback.answer("خطایی رخ داده است.")
+        logger.error(f"Error in name handler: {e}")
+        await message.answer("خطایی رخ داده است.")
 
-@router.callback_query(F.data.startswith("audience_"))
-async def handle_audience_selection(callback: CallbackQuery, state: FSMContext):
-    """Handle audience selection"""
+@router.message(StateFilter(OnboardingStates.waiting_for_phone))
+async def handle_phone_input(message: Message, state: FSMContext, user_service: UserService):
+    """Handle phone input"""
+    if message.text == "رد کردن":
+        phone = None
+    elif message.text == "🔙 بازگشت":
+        await back_to_name(message, state, user_service)
+        return
+    else:
+        # Validate phone number
+        phone_pattern = r'^(\+98|0)?9\d{9}$'
+        if not re.match(phone_pattern, message.text):
+            await message.answer(
+                "شماره تلفن معتبر نیست. لطفاً شماره موبایل معتبر وارد کنید یا رد کنید:",
+                reply_markup=get_onboarding_keyboard("skip")
+            )
+            return
+        phone = message.text
+    
     try:
-        parts = callback.data.split("_")
-        audience_name = "_".join(parts[1:]).upper() 
-        audience = AudienceType[audience_name]
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        if phone:
+            await user_service.update_user_phone(user.id, phone)
         
-        await state.update_data(audience_type=audience)
-        
-        await callback.message.edit_text(
-            f"مخاطب «{audience.value}» انتخاب شد.\n\nهدف اصلی‌تون از تولید محتوا چیه؟",
-            reply_markup=get_profile_setup_keyboard("goal")
+        await message.answer(
+            "این مورد اختیاریه، اگه دوست داری مقاله‌های به‌روز برای تقویت طلافروشیت دریافت کنی، ایمیلت رو وارد کن:",
+            reply_markup=get_onboarding_keyboard("skip")
         )
-        await state.set_state(ProfileSetup.waiting_for_goal)
-        await callback.answer()
+        
+        await user_service.update_onboarding_step(user.id, OnboardingStep.EMAIL)
+        await state.set_state(OnboardingStates.waiting_for_email)
         
     except Exception as e:
-        logger.error(f"Error in audience selection: {e}")
+        logger.error(f"Error in phone handler: {e}")
+        await message.answer("خطایی رخ داده است.")
+
+@router.message(StateFilter(OnboardingStates.waiting_for_email))
+async def handle_email_input(message: Message, state: FSMContext, user_service: UserService):
+    """Handle email input"""
+    if message.text == "رد کردن":
+        email = None
+    elif message.text == "🔙 بازگشت":
+        await back_to_phone(message, state, user_service)
+        return
+    else:
+        # Validate email
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, message.text):
+            await message.answer(
+                "ایمیل معتبر نیست. لطفاً ایمیل معتبر وارد کنید یا رد کنید:",
+                reply_markup=get_onboarding_keyboard("skip")
+            )
+            return
+        email = message.text
+    
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        if email:
+            await user_service.update_user_email(user.id, email)
+        
+        await message.answer(
+            "خب حالا بریم سراغ چندتا سوال در مورد کسب‌وکارت، تا بتونم سناریو منحصربه‌فرد تو رو بهت بدم.\n\n"
+            "اول از همه، اسم گالریت چیه؟",
+            reply_markup=get_back_keyboard()
+        )
+        
+        await user_service.update_onboarding_step(user.id, OnboardingStep.GALLERY_NAME)
+        await state.set_state(OnboardingStates.waiting_for_gallery_name)
+        
+    except Exception as e:
+        logger.error(f"Error in email handler: {e}")
+        await message.answer("خطایی رخ داده است.")
+
+@router.message(StateFilter(OnboardingStates.waiting_for_gallery_name))
+async def handle_gallery_name(message: Message, state: FSMContext, user_service: UserService):
+    """Handle gallery name input"""
+    if message.text == "🔙 بازگشت":
+        await back_to_email(message, state, user_service)
+        return
+    
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        await user_service.update_gallery_name(user.id, message.text)
+        
+        await message.answer(
+            f"گالری {message.text} 👌\n\n"
+            "آیدی پیج اینستاگرامت رو بده یه تحلیل بکنم:",
+            reply_markup=get_back_keyboard()
+        )
+        
+        await user_service.update_onboarding_step(user.id, OnboardingStep.INSTAGRAM)
+        await state.set_state(OnboardingStates.waiting_for_instagram)
+        
+    except Exception as e:
+        logger.error(f"Error in gallery name handler: {e}")
+        await message.answer("خطایی رخ داده است.")
+
+@router.message(StateFilter(OnboardingStates.waiting_for_instagram))
+async def handle_instagram(message: Message, state: FSMContext, user_service: UserService):
+    """Handle Instagram handle input"""
+    if message.text == "🔙 بازگشت":
+        await back_to_gallery_name(message, state, user_service)
+        return
+    
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        
+        # Clean Instagram handle
+        instagram = message.text.replace("@", "").replace("https://instagram.com/", "").strip()
+        await user_service.update_instagram_handle(user.id, instagram)
+        
+        await message.answer(
+            "اگر کانال تلگرام هم داری بفرست یه چک بکنم:",
+            reply_markup=get_onboarding_keyboard("skip")
+        )
+        
+        await user_service.update_onboarding_step(user.id, OnboardingStep.TELEGRAM)
+        await state.set_state(OnboardingStates.waiting_for_telegram)
+        
+    except Exception as e:
+        logger.error(f"Error in Instagram handler: {e}")
+        await message.answer("خطایی رخ داده است.")
+
+@router.message(StateFilter(OnboardingStates.waiting_for_telegram))
+async def handle_telegram_channel(message: Message, state: FSMContext, user_service: UserService):
+    """Handle Telegram channel input"""
+    if message.text == "رد کردن":
+        telegram = None
+    elif message.text == "🔙 بازگشت":
+        await back_to_instagram(message, state, user_service)
+        return
+    else:
+        telegram = message.text.replace("@", "").replace("https://t.me/", "").strip()
+    
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        if telegram:
+            await user_service.update_telegram_channel(user.id, telegram)
+        
+        await message.answer(
+            "بیشتر مشتریات کیا هستن؟\n\n"
+            "مثلاً: خانم‌های جوان، آقایان میانسال، عروس‌خانم‌ها و...",
+            reply_markup=get_back_keyboard()
+        )
+        
+        await user_service.update_onboarding_step(user.id, OnboardingStep.CUSTOMERS)
+        await state.set_state(OnboardingStates.waiting_for_customers)
+        
+    except Exception as e:
+        logger.error(f"Error in Telegram handler: {e}")
+        await message.answer("خطایی رخ داده است.")
+
+@router.message(StateFilter(OnboardingStates.waiting_for_customers))
+async def handle_customers(message: Message, state: FSMContext, user_service: UserService):
+    """Handle main customers input"""
+    if message.text == "🔙 بازگشت":
+        await back_to_telegram(message, state, user_service)
+        return
+    
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        await user_service.update_main_customers(user.id, message.text)
+        
+        await message.answer(
+            "چه باید و نبایدهایی رو باید برای سناریو تو رعایت کنم؟\n\n"
+            "مثل محدودیت‌های شخصی یا منابع خاص یا لحن منحصربه‌فرد",
+            reply_markup=get_onboarding_keyboard("skip")
+        )
+        
+        await user_service.update_onboarding_step(user.id, OnboardingStep.CONSTRAINTS)
+        await state.set_state(OnboardingStates.waiting_for_constraints)
+        
+    except Exception as e:
+        logger.error(f"Error in customers handler: {e}")
+        await message.answer("خطایی رخ داده است.")
+
+@router.message(StateFilter(OnboardingStates.waiting_for_constraints))
+async def handle_constraints(message: Message, state: FSMContext, user_service: UserService):
+    """Handle constraints input"""
+    if message.text == "رد کردن":
+        constraints = None
+    elif message.text == "🔙 بازگشت":
+        await back_to_customers(message, state, user_service)
+        return
+    else:
+        constraints = message.text
+    
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        if constraints:
+            await user_service.update_constraints(user.id, constraints)
+        
+        await message.answer(
+            "کسیو داری که توی تولید محتوا کمکت کنه؟\n\n"
+            "مثال توی ضبط یا تدوین یا آپلود",
+            reply_markup=get_onboarding_keyboard("skip")
+        )
+        
+        await user_service.update_onboarding_step(user.id, OnboardingStep.HELP)
+        await state.set_state(OnboardingStates.waiting_for_help)
+        
+    except Exception as e:
+        logger.error(f"Error in constraints handler: {e}")
+        await message.answer("خطایی رخ داده است.")
+
+@router.message(StateFilter(OnboardingStates.waiting_for_help))
+async def handle_content_help(message: Message, state: FSMContext, user_service: UserService):
+    """Handle content help input"""
+    if message.text == "رد کردن":
+        help_info = None
+    elif message.text == "🔙 بازگشت":
+        await back_to_constraints(message, state, user_service)
+        return
+    else:
+        help_info = message.text
+    
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        if help_info:
+            await user_service.update_content_help(user.id, help_info)
+        
+        await message.answer(
+            "گالری حضوری هم داری یا نه هنوز؟",
+            reply_markup=get_onboarding_keyboard("yes_no")
+        )
+        
+        await user_service.update_onboarding_step(user.id, OnboardingStep.PHYSICAL_STORE)
+        await state.set_state(OnboardingStates.waiting_for_physical_store)
+        
+    except Exception as e:
+        logger.error(f"Error in content help handler: {e}")
+        await message.answer("خطایی رخ داده است.")
+
+@router.message(StateFilter(OnboardingStates.waiting_for_physical_store))
+async def handle_physical_store(message: Message, state: FSMContext, user_service: UserService):
+    """Handle physical store question"""
+    if message.text == "🔙 بازگشت":
+        await back_to_help(message, state, user_service)
+        return
+    
+    has_store = message.text in ["آره", "بله", "دارم"]
+    
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        await user_service.update_physical_store(user.id, has_store)
+        
+        await message.answer(
+            "حله، من هر سوالی داشتم پرسیدم، اگه فکر میکنی چیز خاصی هست که من باید بدونم ولی نپرسیدم بگو، وگرنه ادامه بدیم:",
+            reply_markup=get_onboarding_keyboard("continue")
+        )
+        
+        await user_service.update_onboarding_step(user.id, OnboardingStep.ADDITIONAL_INFO)
+        await state.set_state(OnboardingStates.waiting_for_additional_info)
+        
+    except Exception as e:
+        logger.error(f"Error in content help handler: {e}")
+        await message.answer("خطایی رخ داده است.")
+
+@router.message(StateFilter(OnboardingStates.waiting_for_additional_info))
+async def handle_additional_info(message: Message, state: FSMContext, user_service: UserService):
+    """After additional info, show AI-generated summary and ask for confirmation"""
+    if message.text == "🔙 بازگشت":
+        await back_to_physical_store(message, state, user_service)
+        return
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        if message.text and message.text not in ["ادامه بدیم", "رد کردن"]:
+            await user_service.update_additional_info(user.id, message.text)
+        profile = await user_service.get_user_profile(user.id)
+        ai = AIService()
+        summary = await ai.generate_situation_summary(profile)
+        await message.answer("اول از همه طبق تحلیل من و اطلاعاتی که دادی 'گزارش خلاصه وضعیت':\n\n" + summary)
+        await message.answer("آیا این خلاصه درست است؟", reply_markup=get_confirmation_keyboard())
+        await user_service.update_onboarding_step(user.id, OnboardingStep.SUMMARY_CONFIRM)
+        await state.set_state(OnboardingStates.waiting_for_summary_confirm)
+    except Exception as e:
+        logger.error(f"Error in additional info handler: {e}")
+        await message.answer("خطایی رخ داده است.")
+
+@router.callback_query(F.data.in_("confirm_yes", "confirm_no"))
+async def handle_summary_confirmation(callback: CallbackQuery, state: FSMContext, user_service: UserService):
+    try:
+        user = await user_service.get_user_by_telegram_id(callback.from_user.id)
+        approved = callback.data == "confirm_yes"
+        # Save summary and complete onboarding if approved
+        if approved:
+            profile = await user_service.get_user_profile(user.id)
+            await user_service.update_profile_summary_and_complete(user.id, profile.situation_summary or "", True)
+            upsell = (
+                "حالا من سه تا سناریو بهت میدم، کلمه به کلمه و تصویر به تصویر.\n"
+                "اگر از این سه تا سناریو راضی بودی، می‌تونی با پرداخت فقط 980,000 تومان من رو استخدام کنی تا هرماه تقویم محتوایی دقیق ریلزها رو بهت بدم."
+            )
+            await callback.message.edit_text(upsell)
+            await callback.message.answer("برای ادامه یک گزینه را انتخاب کنید:", reply_markup=get_payment_keyboard())
+        else:
+            await callback.message.edit_text("باشه، هرجایی نیاز بود اصلاح کن و دوباره ادامه بده.")
+        await state.clear()
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Error in summary confirmation: {e}")
         await callback.answer("خطایی رخ داده است.")
 
 @router.callback_query(F.data.startswith("goal_"))
@@ -249,6 +536,26 @@ async def handle_content_generation(message: Message, state: FSMContext, user_se
     except Exception as e:
         logger.error(f"Error in content generation: {e}")
         await message.answer("خطایی رخ داده است. لطفاً دوباره تلاش کنید.")
+
+@router.message(F.text == "📅 تقویم محتوایی", StateFilter(ContentGeneration.waiting_for_content_type))
+async def handle_calendar_request(message: Message, state: FSMContext, user_service: UserService):
+    try:
+        user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
+        profile = await user_service.get_user_profile(user.id)
+        if not profile:
+            await message.answer("لطفاً ابتدا پروفایل خود را تکمیل کنید. /profile")
+            return
+        loading_msg = await message.answer("در حال تولید تقویم محتوایی... 📅")
+        ai = AIService()
+        ideas = await ai.generate_content_calendar(profile)
+        await user_service.save_content_history(user.id, ContentType.CALENDAR, "content_calendar", "\n\n---\n\n".join(ideas))
+        await loading_msg.delete()
+        result_text = "📅 تقویم محتوایی پیشنهادی:\n\n" + "\n\n---\n\n".join(ideas)
+        await message.answer(result_text)
+        await state.set_state(ContentGeneration.waiting_for_content_type)
+    except Exception as e:
+        logger.error(f"Error generating calendar: {e}")
+        await message.answer("خطا در تولید تقویم محتوایی. دوباره تلاش کنید.")
 
 @router.message(F.text == "✍️ کپشن نویسی", StateFilter(ContentGeneration.waiting_for_content_type))
 async def handle_caption_request(message: Message, state: FSMContext):
@@ -458,6 +765,29 @@ async def handle_subscription_renewal(message: Message, user_service: UserServic
         logger.error(f"Error in subscription renewal: {e}")
         await message.answer("خطایی رخ داده است. لطفاً دوباره تلاش کنید.")
 
+@router.message(F.text == "🎁 کد تخفیف")
+async def handle_discount_entry(message: Message, state: FSMContext):
+    await message.answer("کد تخفیف را ارسال کنید:", reply_markup=get_discount_keyboard())
+    await state.set_state(DiscountStates.waiting_for_discount_code)
+
+@router.message(StateFilter(DiscountStates.waiting_for_discount_code))
+async def handle_discount_code(message: Message, state: FSMContext, user_service: UserService):
+    if message.text == "🔙 بازگشت":
+        await back_to_main_menu(message, state)
+        return
+    try:
+        user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
+        discount = await user_service.apply_discount_code(message.text.strip(), user.id)
+        if not discount:
+            await message.answer("کد تخفیف معتبر نیست یا منقضی شده است.")
+            return
+        await user_service.update_subscription_discount(user.id, discount)
+        await message.answer(f"کد تخفیف با موفقیت اعمال شد: {int(discount.discount_percentage*100)}%")
+        await back_to_main_menu(message, state, user_service)
+    except Exception as e:
+        logger.error(f"Error applying discount code: {e}")
+        await message.answer("خطا در اعمال کد تخفیف.")
+
 @router.callback_query(F.data.startswith("payment_"))
 async def handle_payment_selection(callback: CallbackQuery):
     """Handle payment option selection"""
@@ -488,12 +818,14 @@ async def handle_payment_selection(callback: CallbackQuery):
 
 # Utility handlers
 @router.message(F.text == "🔙 بازگشت")
-async def back_to_main_menu(message: Message, state: FSMContext, user_service: UserService):
+async def back_to_main_menu(message: Message, state: FSMContext, user_service: UserService | None = None):
     """Return to main menu"""
     try:
-        user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
-        subscription = await user_service.get_user_subscription(user.id)
-        is_subscribed = subscription.is_active if subscription else False
+        is_subscribed = False
+        if user_service is not None:
+            user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
+            subscription = await user_service.get_user_subscription(user.id)
+            is_subscribed = subscription.is_active if subscription else False
         
         await message.answer(
             "بازگشت به منوی اصلی",
@@ -540,3 +872,145 @@ async def handle_unknown_message(message: Message):
 def register_handlers() -> Router:
     """Register all handlers and return router"""
     return router
+
+# =============================
+# Back navigation helper functions
+# =============================
+
+async def back_to_start(message: Message, state: FSMContext):
+    """Go back to start readiness confirmation"""
+    await message.answer(
+        "برگردیم به شروع. اگر آماده‌ای بزن روی \"آماده‌ام\":",
+        reply_markup=get_start_keyboard()
+    )
+    await state.set_state(OnboardingStates.waiting_for_ready)
+
+async def back_to_name(message: Message, state: FSMContext, user_service: UserService):
+    """Go back to asking user's display name"""
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        await user_service.update_onboarding_step(user.id, OnboardingStep.NAME)
+    except Exception:
+        pass
+    await message.answer(
+        "چی صدات کنم؟",
+        reply_markup=get_back_keyboard()
+    )
+    await state.set_state(OnboardingStates.waiting_for_name)
+
+async def back_to_phone(message: Message, state: FSMContext, user_service: UserService):
+    """Go back to asking for phone number"""
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        await user_service.update_onboarding_step(user.id, OnboardingStep.PHONE)
+    except Exception:
+        pass
+    await message.answer(
+        "شماره موبایل‌ت رو وارد کن یا رد کن:",
+        reply_markup=get_onboarding_keyboard("skip")
+    )
+    await state.set_state(OnboardingStates.waiting_for_phone)
+
+async def back_to_email(message: Message, state: FSMContext, user_service: UserService):
+    """Go back to asking for email"""
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        await user_service.update_onboarding_step(user.id, OnboardingStep.EMAIL)
+    except Exception:
+        pass
+    await message.answer(
+        "ایمیلت رو وارد کن یا رد کن:",
+        reply_markup=get_onboarding_keyboard("skip")
+    )
+    await state.set_state(OnboardingStates.waiting_for_email)
+
+async def back_to_gallery_name(message: Message, state: FSMContext, user_service: UserService):
+    """Go back to asking for gallery name"""
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        await user_service.update_onboarding_step(user.id, OnboardingStep.GALLERY_NAME)
+    except Exception:
+        pass
+    await message.answer(
+        "اسم گالریت چیه؟",
+        reply_markup=get_back_keyboard()
+    )
+    await state.set_state(OnboardingStates.waiting_for_gallery_name)
+
+async def back_to_instagram(message: Message, state: FSMContext, user_service: UserService):
+    """Go back to asking for Instagram handle"""
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        await user_service.update_onboarding_step(user.id, OnboardingStep.INSTAGRAM)
+    except Exception:
+        pass
+    await message.answer(
+        "آیدی پیج اینستاگرامت رو بده:",
+        reply_markup=get_back_keyboard()
+    )
+    await state.set_state(OnboardingStates.waiting_for_instagram)
+
+async def back_to_telegram(message: Message, state: FSMContext, user_service: UserService):
+    """Go back to asking for Telegram channel"""
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        await user_service.update_onboarding_step(user.id, OnboardingStep.TELEGRAM)
+    except Exception:
+        pass
+    await message.answer(
+        "اگر کانال تلگرام هم داری بفرست، یا رد کن:",
+        reply_markup=get_onboarding_keyboard("skip")
+    )
+    await state.set_state(OnboardingStates.waiting_for_telegram)
+
+async def back_to_customers(message: Message, state: FSMContext, user_service: UserService):
+    """Go back to asking about main customers"""
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        await user_service.update_onboarding_step(user.id, OnboardingStep.CUSTOMERS)
+    except Exception:
+        pass
+    await message.answer(
+        "بیشتر مشتریات کیا هستن؟",
+        reply_markup=get_back_keyboard()
+    )
+    await state.set_state(OnboardingStates.waiting_for_customers)
+
+async def back_to_constraints(message: Message, state: FSMContext, user_service: UserService):
+    """Go back to asking about constraints"""
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        await user_service.update_onboarding_step(user.id, OnboardingStep.CONSTRAINTS)
+    except Exception:
+        pass
+    await message.answer(
+        "چه باید و نبایدهایی رو باید رعایت کنم؟ می‌تونی رد کنی:",
+        reply_markup=get_onboarding_keyboard("skip")
+    )
+    await state.set_state(OnboardingStates.waiting_for_constraints)
+
+async def back_to_help(message: Message, state: FSMContext, user_service: UserService):
+    """Go back to asking about content help"""
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        await user_service.update_onboarding_step(user.id, OnboardingStep.HELP)
+    except Exception:
+        pass
+    await message.answer(
+        "کسی هست توی تولید محتوا کمکت کنه؟ می‌تونی رد کنی:",
+        reply_markup=get_onboarding_keyboard("skip")
+    )
+    await state.set_state(OnboardingStates.waiting_for_help)
+
+async def back_to_physical_store(message: Message, state: FSMContext, user_service: UserService):
+    """Go back to physical store question"""
+    try:
+        user = await user_service.get_user_by_telegram_id(message.from_user.id)
+        await user_service.update_onboarding_step(user.id, OnboardingStep.PHYSICAL_STORE)
+    except Exception:
+        pass
+    await message.answer(
+        "گالری حضوری هم داری یا نه هنوز؟",
+        reply_markup=get_onboarding_keyboard("yes_no")
+    )
+    await state.set_state(OnboardingStates.waiting_for_physical_store)
