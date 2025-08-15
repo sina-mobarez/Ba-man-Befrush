@@ -168,18 +168,30 @@ class AIService:
     async def generate_situation_summary(self, user_profile: UserProfile) -> str:
         """Generate Persian situation summary from collected onboarding info"""
         system_prompt = (
-            "تو یک استراتژیست محتوا برای طلافروشان هستی. از اطلاعات زیر خلاصه وضعیت ارائه بده: \n"
-            "- نقاط قوت/ضعف صفحه\n- پیشنهاد بهبود سریع\n- تیپ مخاطب\n- مسیر محتوا"
+            "تو یک مشاور حرفه‌ای در زمینه بازاریابی و استراتژی محتوا برای طلافروشان هستی. "
+            "بر اساس اطلاعات کاربر، یک تحلیل ساختاریافته و کاربردی به زبان فارسی ارائه بده که شامل بخش‌های زیر باشد:\n"
+            "1. تحلیل وضعیت فعلی (نقاط قوت و ضعف)\n"
+            "2. پیشنهادات عملی برای بهبود\n"
+            "3. شناخت مخاطبان هدف\n"
+            "4. راهکارهای محتوایی\n\n"
+            "رعایت این نکات ضروری است:\n"
+            "- از عناوین شماره‌دار و نشانه‌گذاری ساده استفاده کن\n"
+            "- از علامت‌هایی مانند #، *، - در ابتدای خطوط خودداری کن\n"
+            "- لحن حرفه‌ای ولی قابل فهم و دوستانه داشته باش\n"
+            "- پیشنهادات باید عملی و متناسب با کسب‌وکار طلا باشد\n"
+            "- جملات کوتاه و گویا باشند"
         )
         user_prompt = (
+            f"اطلاعات کسب‌وکار:\n"
             f"نام گالری: {user_profile.gallery_name}\n"
-            f"اینستاگرام: {user_profile.instagram_handle}\n"
-            f"تلگرام: {user_profile.telegram_channel}\n"
+            f"صفحه اینستاگرام: {user_profile.instagram_handle or 'ثبت نشده'}\n"
+            f"کانال تلگرام: {user_profile.telegram_channel or 'ثبت نشده'}\n"
             f"مشتریان اصلی: {user_profile.main_customers}\n"
-            f"باید و نبایدها: {user_profile.constraints_and_guidelines}\n"
-            f"کمک‌کننده محتوا: {user_profile.content_help}\n"
-            f"گالری حضوری: {user_profile.has_physical_store}\n"
-            f"اطلاعات اضافی: {user_profile.additional_info}\n"
+            f"محدودیت‌ها و بایدونبایدها: {user_profile.constraints_and_guidelines}\n"
+            f"نیازهای محتوایی: {user_profile.content_help}\n"
+            f"فروشگاه فیزیکی: {'دارد' if user_profile.has_physical_store else 'ندارد'}\n"
+            f"اطلاعات تکمیلی: {user_profile.additional_info or 'ثبت نشده'}\n\n"
+            f"لطفاً تحلیل کاملی ارائه دهید:"
         )
         try:
             self.last_prompt_name = "situation_summary"

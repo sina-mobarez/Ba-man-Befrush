@@ -48,6 +48,31 @@ class DiscountStates(StatesGroup):
 # Create router
 router = Router()
 
+# Help command
+@router.message(Command("help"))
+async def cmd_help(message: Message):
+    """Handle /help command"""
+    help_text = """
+🤖 راهنمای ربات تولید محتوا
+
+🧠 تولید محتوا:
+• کپشن نویسی: کپشن جذاب برای پست‌ها
+• سناریو ریلز: ایده برای ویدیوهای کوتاه
+• ایده بصری: پیشنهاد برای عکاسی محصولات
+
+🎛️ ویرایش پروفایل:
+• تغییر سبک، مخاطب و هدف
+• اطلاعات کسب‌وکار
+
+🔁 تمدید اشتراک:
+• پرداخت ماهانه یا فصلی
+• مشاهده وضعیت اشتراک
+
+📞 پشتیبانی: @rez77
+    """
+    
+    await message.answer(help_text.strip())
+
 # Start command with referral support
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext, user_service: UserService):
