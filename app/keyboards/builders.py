@@ -126,6 +126,15 @@ def get_confirmation_keyboard() -> InlineKeyboardMarkup:
     builder.adjust(2)
     return builder.as_markup()
 
+def get_confirmation_payment_keyboard() -> InlineKeyboardMarkup:
+    """Confirmation payment keyboard"""
+    builder = InlineKeyboardBuilder()
+    
+    builder.add(InlineKeyboardButton(text="چرا که نه 🤗", callback_data="now"))
+    builder.add(InlineKeyboardButton(text="بعدا 😮‍💨", callback_data="later"))
+    
+    builder.adjust(2)
+    return builder.as_markup()
 
 def get_start_keyboard() -> ReplyKeyboardMarkup:
     """Initial start keyboard"""

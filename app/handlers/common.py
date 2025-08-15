@@ -10,7 +10,7 @@ from core.config import settings
 from services.ai_service import AIService
 from services.user_service import UserService
 from keyboards.builders import (
-    get_start_keyboard, get_main_menu, get_content_type_keyboard, 
+    get_confirmation_payment_keyboard, get_start_keyboard, get_main_menu, get_content_type_keyboard, 
     get_profile_edit_keyboard, get_payment_keyboard, get_back_keyboard,
     get_confirmation_keyboard, get_discount_keyboard, get_onboarding_keyboard,
     get_profile_setup_keyboard
@@ -35,6 +35,7 @@ class OnboardingStates(StatesGroup):
     waiting_for_additional_info = State()
     waiting_for_summary_confirm = State()
     waiting_for_subscription_decision = State()
+    viewing_scenarios = State()
 
 class ContentGeneration(StatesGroup):
     waiting_for_content_type = State()
@@ -454,7 +455,8 @@ async def handle_additional_info(message: Message, state: FSMContext, user_servi
         profile = await user_service.get_user_profile(user.id)
         ai = AIService()
         summary = await ai.generate_situation_summary(profile)
-        await message.answer("اول از همه طبق تحلیل من و اطلاعاتی که دادی 'گزارش خلاصه وضعیت':\n\n" + summary)
+        await user_service.update_profile_summary_and_complete(user.id, summary, False)
+        await message.answer(summary)
         await message.answer("آیا این خلاصه درست است؟", reply_markup=get_confirmation_keyboard())
         await user_service.update_onboarding_step(user.id, OnboardingStep.SUMMARY_CONFIRM)
         await state.set_state(OnboardingStates.waiting_for_summary_confirm)
@@ -470,13 +472,6 @@ async def handle_summary_confirmation(callback: CallbackQuery, state: FSMContext
         logger.info(f"State: {state}")
         logger.info(f"UserService type: {type(user_service)}")
         logger.info(f"UserService: {user_service}")
-        
-        # Ensure we have a valid user_service
-        if not user_service:
-            logger.error("UserService not available in callback handler")
-            await callback.answer("خطا در سرویس کاربری.")
-            return
-            
         logger.info("Getting user by telegram ID...")
         user = await user_service.get_user_by_telegram_id(callback.from_user.id)
         if not user:
@@ -496,25 +491,12 @@ async def handle_summary_confirmation(callback: CallbackQuery, state: FSMContext
                 await user_service.update_user_profile(user.id, gallery_name="گالری جدید")
                 profile = await user_service.get_user_profile(user.id)
             
-            logger.info("Generating AI summary...")
-            # Generate summary using AI
-            try:
-                ai_service = AIService()
-                summary = await ai_service.generate_situation_summary(profile)
-                logger.info("AI summary generated successfully")
-            except Exception as e:
-                logger.error(f"Error generating summary: {e}")
-                summary = "خلاصه وضعیت بر اساس اطلاعات موجود"
-            
-            logger.info("Saving profile summary...")
             # Save summary and complete onboarding
-            success = await user_service.update_profile_summary_and_complete(user.id, summary, True)
-            if not success:
-                await callback.answer("خطا در ذخیره اطلاعات.")
-                return
+            await user_service.approved_profile_summary(user.id, approved)
             
             logger.info("Generating AI scenarios...")
             # Generate 3 reels scenarios using AI
+            ai_service = AIService()
             try:
                 scenarios = await ai_service.generate_reels_scenario(
                     theme="معرفی گالری طلا و جواهرات",
@@ -539,28 +521,23 @@ async def handle_summary_confirmation(callback: CallbackQuery, state: FSMContext
                 scenarios_text
             )
             
-            logger.info("Showing scenarios to user...")
-            # Show scenarios
-            scenarios_message = "🎬 سناریوهای ریلز پیشنهادی:\n\n"
-            for i, scenario in enumerate(scenarios, 1):
-                scenarios_message += f"سناریو {i}:\n{scenario}\n\n---\n\n"
-            
-            await callback.message.edit_text(scenarios_message.strip())
-            
-            logger.info("Asking for subscription decision...")
-            # Ask for subscription decision
-            subscription_question = (
-                "حالا من سه تا سناریو بهت دادم، کلمه به کلمه و تصویر به تصویر.\n"
-                "اگر از این سه تا سناریو راضی بودی، می‌تونی با پرداخت فقط 980,000 تومان من رو استخدام کنی تا هرماه تقویم محتوایی دقیق ریلزها رو بهت بدم.\n\n"
-                "آیا می‌خواهید اشتراک تهیه کنید؟"
+            logger.info("Showing first scenario to user...")
+            # Store scenarios in state data for step-by-step viewing
+            await state.update_data(
+                scenarios=scenarios,
+                current_scenario=1,
+                total_scenarios=len(scenarios)
             )
             
-            await callback.message.answer(
-                subscription_question,
-                reply_markup=get_confirmation_keyboard()
+            # Show first scenario with navigation
+            first_scenario = format_scenario_message(scenarios[0], 1, len(scenarios))
+            
+            await callback.message.edit_text(
+                first_scenario,
+                reply_markup=get_scenario_navigation_keyboard(1, len(scenarios))
             )
             
-            await state.set_state(OnboardingStates.waiting_for_subscription_decision)
+            await state.set_state(OnboardingStates.viewing_scenarios)
             logger.info("Summary confirmation completed successfully")
             
         else:
@@ -573,10 +550,71 @@ async def handle_summary_confirmation(callback: CallbackQuery, state: FSMContext
         logger.error(f"Error in summary confirmation: {e}")
         await callback.answer("خطایی رخ داده است.")
 
-@router.callback_query(F.data.in_({"confirm_yes", "confirm_no"}), StateFilter(OnboardingStates.waiting_for_subscription_decision))
+# Scenario navigation handlers
+@router.callback_query(F.data.startswith("scenario_"))
+async def handle_scenario_navigation(callback: CallbackQuery, state: FSMContext):
+    """Handle scenario navigation (prev/next/continue)"""
+    try:
+        data = await state.get_data()
+        scenarios = data.get('scenarios', [])
+        current = data.get('current_scenario', 1)
+        total = data.get('total_scenarios', len(scenarios))
+        
+        if not scenarios:
+            await callback.answer("خطا در دریافت سناریوها.")
+            return
+        
+        if callback.data.startswith("scenario_prev_"):
+            # Previous scenario
+            new_current = max(1, current - 1)
+            await state.update_data(current_scenario=new_current)
+            
+            scenario_text = format_scenario_message(scenarios[new_current - 1], new_current, total)
+            await callback.message.edit_text(
+                scenario_text,
+                reply_markup=get_scenario_navigation_keyboard(new_current, total)
+            )
+            
+        elif callback.data.startswith("scenario_next_"):
+            # Next scenario
+            new_current = min(total, current + 1)
+            await state.update_data(current_scenario=new_current)
+            
+            scenario_text = format_scenario_message(scenarios[new_current - 1], new_current, total)
+            await callback.message.edit_text(
+                scenario_text,
+                reply_markup=get_scenario_navigation_keyboard(new_current, total)
+            )
+            
+        elif callback.data == "scenario_continue":
+            # Continue to subscription decision
+            subscription_question = (
+                "خب، حالا که نحوه کارم رو دیدی... 🤓\n"
+                "اگر حس کردی اینجور آدمی می‌تونه به گالریت کمک کنه، می‌تونیم با هم همکار بشیم!\n\n"
+                "هر ماه فقط ۹۸۰ هزار تومان (به قیمت یه دستبند ساده!) و من:\n"
+                "✅ تقویم محتوایی آماده می‌دم\n"
+                "✅ ریلزهای حرفه‌ای طراحی می‌کنم\n"
+                "✅ کلی ایده نو برای فروش بیشتر می‌ریزم تو جیبت!\n\n"
+                "پس... میخوای استخدامم کنی؟ 😎"
+            )
+            
+            await callback.message.edit_text(
+                subscription_question,
+                reply_markup=get_confirmation_payment_keyboard()
+            )
+            
+            await state.set_state(OnboardingStates.waiting_for_subscription_decision)
+        
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"Error in scenario navigation: {e}")
+        await callback.answer("خطایی رخ داده است.")
+
+@router.callback_query(F.data.in_({"now", "later"}), StateFilter(OnboardingStates.waiting_for_subscription_decision))
 async def handle_subscription_decision(callback: CallbackQuery, state: FSMContext):
     try:
-        wants_subscription = callback.data == "confirm_yes"
+        wants_subscription = callback.data == "now"
         
         if wants_subscription:
             await callback.message.edit_text("عالی! برای ادامه یکی از گزینه‌های پرداخت را انتخاب کنید:")
@@ -1001,6 +1039,56 @@ async def handle_unknown_message(message: Message):
         "متوجه نشدم چی گفتید. 🤔\n"
         "از منو یکی از گزینه‌ها رو انتخاب کنید یا /help بزنید."
     )
+
+def format_scenario_message(scenario: str, scenario_num: int, total: int) -> str:
+    """Format scenario as professional Telegram message"""
+    formatted = f"🎬 سناریو {scenario_num} از {total}\n\n"
+    formatted += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+    
+    # Clean and format the scenario content
+    lines = scenario.strip().split('\n')
+    for line in lines:
+        line = line.strip()
+        if line:
+            # Add proper formatting for different sections
+            if line.startswith('📋') or line.startswith('🎬') or line.startswith('✍️') or line.startswith('🎵') or line.startswith('⏱️') or line.startswith('🎯'):
+                formatted += f"\n{line}\n"
+            elif line.startswith('سناریو'):
+                formatted += f"**{line}**\n"
+            else:
+                formatted += f"{line}\n"
+    
+    formatted += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    return formatted
+
+def get_scenario_navigation_keyboard(current: int, total: int):
+    """Create navigation keyboard for scenarios"""
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    from aiogram.types import InlineKeyboardButton
+    
+    keyboard = InlineKeyboardBuilder()
+    
+    # Navigation buttons
+    if current > 1:
+        keyboard.add(InlineKeyboardButton(
+            text="⬅️ قبلی", 
+            callback_data=f"scenario_prev_{current}"
+        ))
+    
+    if current < total:
+        keyboard.add(InlineKeyboardButton(
+            text="بعدی ➡️", 
+            callback_data=f"scenario_next_{current}"
+        ))
+    
+    # Always show continue button
+    keyboard.add(InlineKeyboardButton(
+        text="ادامه فرآیند", 
+        callback_data="scenario_continue"
+    ))
+    
+    keyboard.adjust(2, 1)
+    return keyboard.as_markup()
 
 def register_handlers() -> Router:
     """Register all handlers and return router"""

@@ -91,36 +91,50 @@ class AIService:
         user_profile: UserProfile,
         occasion: Optional[str] = None
     ) -> List[str]:
-        """Generate Instagram Reels scenarios"""
+        """Generate Instagram Reels scenarios with enhanced prompt engineering"""
         style_prompt = self._get_style_prompt(user_profile.page_style)
         audience_prompt = self._get_audience_prompt(user_profile.audience_type)
         
         system_prompt = f"""
-        تو یک کارگردان محتوا برای ریلز اینستاگرام هستی که برای صفحات طلا و جواهرات کار می‌کنی.
+        تو یک کارگردان محتوای اینستاگرام حرفه‌ای و خبره هستی که مختص طلا و جواهرات کار می‌کنی. 
+        تخصص اصلی‌ت تولید سناریوهای ریلز ویرال و جذاب است.
         
-        سبک محتوا: {style_prompt}
+        سبک محتوای مورد نظر: {style_prompt}
         مخاطب هدف: {audience_prompt}
+        نام گالری: {user_profile.gallery_name or 'گالری کاربر'}
+        اینستاگرام: {user_profile.instagram_handle or 'instagram_handle'}
         
-        قوانین:
-        - 3 سناریو مختلف ارائه بده
-        - هر سناریو شامل: موضوع، چگونگی فیلم‌برداری، متن روی ویدیو، موزیک پیشنهادی
-        - سناریوها باید قابل اجرا و عملی باشند
-        - از ترندهای روز استفاده کن
-        - هر سناریو را با عدد شماره‌گذاری کن
+        ⚠️ قوانین سخت‌گیرانه تولید سناریو:
+        1. حتماً 3 سناریو کاملاً مختلف و مجزا تولید کن
+        2. هر سناریو را دقیقاً با این فرمت شروع کن: "سناریو ۱:" یا "سناریو ۲:" یا "سناریو ۳:"
+        3. هر سناریو باید دارای این بخش‌های مجزا باشد:
+           📋 موضوع ریلز
+           🎬 نحوه فیلم‌برداری (زاویه، حرکات دوربین، تکنیک‌ها)
+           ✍️ متن روی ویدیو (Text Overlay)
+           🎵 نوع موزیک پیشنهادی
+           ⏱️ مدت زمان (15-30 ثانیه)
+           🎯 هدف (engagement, sales, awareness)
+           
+        4. زبان فارسی روان و عاری از اشتباه املایی
+        5. سناریوها باید عملی، قابل اجرا و مقرون‌به‌صرفه باشند
+        6. از ترندهای اینستاگرام و تکنیک‌های ویرال استفاده کن
+        7. مناسب برند طلا و جواهرات باشد
         """
         
         user_prompt = f"""
         موضوع اصلی: {theme}
         {f"مناسبت: {occasion}" if occasion else ""}
+        مشتریان اصلی: {user_profile.main_customers or 'عموم'}
         
-        لطفاً 3 سناریو ریلز مختلف ارائه بده.
+        حالا 3 سناریو ریلز کاملاً حرفه‌ای و عملی برای این موضوع تولید کن.
+        هر سناریو را با "سناریو ۱:", "سناریو ۲:", "سناریو ۳:" شروع کن.
         """
         
         try:
             self.last_prompt_name = "reels_generation"
             self.last_prompt_content = f"SYSTEM:\n{system_prompt.strip()}\n\nUSER:\n{user_prompt.strip()}"
             response = await self._call_ai(system_prompt, user_prompt)
-            scenarios = self._parse_numbered_content(response, 3)
+            scenarios = self._parse_persian_numbered_content(response, 3)
             return scenarios
         except Exception as e:
             logger.error(f"Error generating reels scenarios: {e}")
@@ -241,6 +255,44 @@ class AIService:
             parsed_content = [chunk.strip() for chunk in chunks if chunk.strip()]
         
         return parsed_content[:expected_count] if parsed_content else [content]
+    
+    def _parse_persian_numbered_content(self, content: str, expected_count: int) -> List[str]:
+        """Parse Persian numbered content specifically for reels scenarios"""
+        # Clean up the content
+        content = content.strip()
+        
+        # Split by Persian scenario markers
+        scenarios = []
+        
+        # Look for Persian scenario markers
+        import re
+        scenario_pattern = r'سناریو\s*[۱۲۳123]\s*:'
+        
+        parts = re.split(scenario_pattern, content, flags=re.IGNORECASE)
+        
+        # The first part might be empty or contain intro text
+        if len(parts) > 1:
+            for i in range(1, len(parts)):
+                scenario_text = parts[i].strip()
+                if scenario_text:
+                    # Add the scenario header back
+                    scenario_num = i
+                    persian_nums = ['', '۱', '۲', '۳']
+                    if scenario_num <= 3:
+                        full_scenario = f"سناریو {persian_nums[scenario_num]}:\n{scenario_text}"
+                        scenarios.append(full_scenario)
+        
+        # Fallback to original parsing if no scenarios found
+        if not scenarios:
+            return self._parse_numbered_content(content, expected_count)
+        
+        # Ensure we have exactly the expected count
+        if len(scenarios) < expected_count:
+            # Split the content differently as fallback
+            chunks = content.split('\n\n')
+            scenarios = [chunk.strip() for chunk in chunks if chunk.strip() and 'سناریو' in chunk]
+        
+        return scenarios[:expected_count] if scenarios else [content]
     
     def _get_style_prompt(self, style: PageStyle) -> str:
         """Get style-specific prompt"""
