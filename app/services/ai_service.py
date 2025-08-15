@@ -233,12 +233,32 @@ class AIService:
     async def generate_content_calendar(self, user_profile: UserProfile) -> List[str]:
         """Generate a short 3-item content calendar suggestion"""
         system_prompt = (
-            "تو یک برنامه‌ریز محتوا هستی. بر اساس اطلاعات زیر 3 ایده محتوایی زمان‌بندی شده بده."
+            "تو یک استراتژیست محتوای تخصصی برای طلا و جواهرات هستی. بر اساس مشخصات کسب‌وکار مشتری، "
+            "3 ایده محتوایی جذاب برای شبکه‌های اجتماعی پیشنهاد بده. هر ایده باید شامل:\n"
+            "1. نوع محتوا (پست، ریلز، استوری، لایو)\n"
+            "2. زمان مناسب (مثلاً 'هفته اول همکاری' یا 'پس از 2 هفته')\n"
+            "3. توضیحات کامل شامل:\n"
+            "   - ایده اصلی و زاویه دید\n"
+            "   - پیشنهاد اجرا\n"
+            "   - نکات فنی و بصری\n"
+            "   - نحوه ارتباط با مخاطب\n\n"
+            "محتوا باید:\n"
+            "- کاملاً مرتبط با صنف طلا و جواهر باشد\n"
+            "- با مشخصات کسب‌وکار مشتری هماهنگ باشد\n"
+            "- برای مخاطبان ایرانی طراحی شده باشد\n"
+            "- از اصطلاحات فنی و حرفه‌ای استفاده کند\n"
+            "- دارای نوآوری و جذابیت بصری باشد"
         )
         user_prompt = (
-            f"مخاطب: {user_profile.main_customers}\n"
-            f"محدودیت‌ها: {user_profile.constraints_and_guidelines}\n"
+            f"مشخصات کسب‌وکار:\n"
+            f"نام گالری: {user_profile.gallery_name}\n"
+            f"مخاطبان اصلی: {user_profile.main_customers}\n"
             f"سبک صفحه: {self._get_style_prompt(user_profile.page_style)}\n"
+            f"محدودیت‌ها: {user_profile.constraints_and_guidelines}\n"
+            f"کمک‌کنندگان محتوا: {user_profile.content_help}\n"
+            f"فروشگاه فیزیکی: {'دارد' if user_profile.has_physical_store else 'ندارد'}\n"
+            f"اطلاعات تکمیلی: {user_profile.additional_info or 'ندارد'}\n\n"
+            f"لطفاً 3 ایده محتوایی ارائه دهید:"
         )
         try:
             self.last_prompt_name = "content_calendar"
