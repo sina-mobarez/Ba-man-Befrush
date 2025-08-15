@@ -146,34 +146,50 @@ class AIService:
         user_profile: UserProfile,
         available_props: Optional[str] = None
     ) -> List[str]:
-        """Generate visual ideas for photography"""
+        """Generate professional visual ideas with enhanced prompt engineering"""
         style_prompt = self._get_style_prompt(user_profile.page_style)
         
         system_prompt = f"""
-        تو یک عکاس حرفه‌ای طلا و جواهرات هستی که ایده‌های بصری خلاقانه ارائه می‌دهی.
+        تو یک مشاور عکاسی حرفه‌ای و خبره برای طلا و جواهرات هستی که ایده‌های بصری جذاب و قابل اجرا ارائه می‌دهی.
+        تخصص اصلی‌ت کمک به طلافروشان برای عکاسی محصولات‌شان به شکل حرفه‌ای است.
         
-        سبک مطلوب: {style_prompt}
+        سبک مورد نظر: {style_prompt}
+        نام گالری: {user_profile.gallery_name or 'گالری کاربر'}
+        مخاطب هدف: {user_profile.main_customers or 'عموم مردم'}
         
-        قوانین:
-        - 3 ایده بصری مختلف ارائه بده
-        - هر ایده شامل: زاویه عکس، نورپردازی، چیدمان، پس‌زمینه
-        - ایده‌ها باید با امکانات موجود قابل اجرا باشند
-        - نکات فنی عکاسی را هم بگو
-        - هر ایده را با عدد شماره‌گذاری کن
+        ⚠️ قوانین سخت‌گیرانه تولید ایده بصری:
+        1. حتماً 3 ایده بصری کاملاً مختلف و عملی تولید کن
+        2. هر ایده را دقیقاً با این فرمت شروع کن: "ایده ۱:" یا "ایده ۲:" یا "ایده ۳:"
+        3. هر ایده باید دارای این بخش‌های مجزا و مشخص باشد:
+           📸 نام ایده (عنوان جذاب)
+           📐 زاویه عکس‌برداری (مثل: نمای نزدیک، از بالا، ۴۵ درجه)
+           💡 نورپردازی (نور طبیعی، استودیو، نور کم، backlight و...)
+           🎨 چیدمان و ترکیب‌بندی (نحوه قرارگیری محصول و عناصر کمکی)
+           🖼️ پس‌زمینه پیشنهادی (رنگ، بافت، عناصر تزیینی)
+           💎 نکته فنی مهم (تنظیمات دوربین یا ترفند خاص)
+           
+        4. زبان فارسی روان، دوستانه و قابل فهم استفاده کن
+        5. ایده‌ها باید با امکانات معمول یک طلافروش قابل اجرا باشند
+        6. از کلمات تخصصی پیچیده خودداری کن
+        7. هر ایده باید منحصر به فرد و خلاقانه باشد
+        8. مناسب فروش آنلاین و جذب مشتری باشد
         """
         
         user_prompt = f"""
         نوع محصول: {product_type}
-        {f"وسایل موجود: {available_props}" if available_props else ""}
+        {f"وسایل و امکانات موجود: {available_props}" if available_props else "امکانات استاندارد گالری"}
+        محدودیت‌ها: {user_profile.constraints_and_guidelines or 'بدون محدودیت خاص'}
         
-        لطفاً 3 ایده بصری مختلف برای عکس‌برداری ارائه بده.
+        حالا 3 ایده بصری کاملاً حرفه‌ای و عملی برای عکاسی این محصول تولید کن.
+        هر ایده را با "ایده ۱:", "ایده ۲:", "ایده ۳:" شروع کن.
+        ایده‌ها باید جذاب، قابل اجرا و مناسب فروش آنلاین باشند.
         """
         
         try:
             self.last_prompt_name = "visual_ideas_generation"
             self.last_prompt_content = f"SYSTEM:\n{system_prompt.strip()}\n\nUSER:\n{user_prompt.strip()}"
             response = await self._call_ai(system_prompt, user_prompt)
-            ideas = self._parse_numbered_content(response, 3)
+            ideas = self._parse_persian_numbered_content(response, 3)
             return ideas
         except Exception as e:
             logger.error(f"Error generating visual ideas: {e}")
@@ -257,42 +273,46 @@ class AIService:
         return parsed_content[:expected_count] if parsed_content else [content]
     
     def _parse_persian_numbered_content(self, content: str, expected_count: int) -> List[str]:
-        """Parse Persian numbered content specifically for reels scenarios"""
+        """Parse Persian numbered content for scenarios and ideas"""
         # Clean up the content
         content = content.strip()
         
-        # Split by Persian scenario markers
-        scenarios = []
+        # Split by Persian markers (scenarios or ideas)
+        items = []
         
-        # Look for Persian scenario markers
+        # Look for Persian markers
         import re
-        scenario_pattern = r'سناریو\s*[۱۲۳123]\s*:'
+        # Pattern for both scenarios and ideas
+        pattern = r'(سناریو\s*[۱۲۳123]\s*:|ایده\s*[۱۲۳123]\s*:)'
         
-        parts = re.split(scenario_pattern, content, flags=re.IGNORECASE)
+        parts = re.split(pattern, content, flags=re.IGNORECASE)
         
         # The first part might be empty or contain intro text
         if len(parts) > 1:
-            for i in range(1, len(parts)):
-                scenario_text = parts[i].strip()
-                if scenario_text:
-                    # Add the scenario header back
-                    scenario_num = i
-                    persian_nums = ['', '۱', '۲', '۳']
-                    if scenario_num <= 3:
-                        full_scenario = f"سناریو {persian_nums[scenario_num]}:\n{scenario_text}"
-                        scenarios.append(full_scenario)
+            current_header = ""
+            for i, part in enumerate(parts):
+                part = part.strip()
+                if re.match(pattern, part, re.IGNORECASE):
+                    # This is a header
+                    current_header = part
+                elif current_header and part:
+                    # This is content following a header
+                    full_item = f"{current_header}\n{part}"
+                    items.append(full_item)
+                    current_header = ""
         
-        # Fallback to original parsing if no scenarios found
-        if not scenarios:
+        # Fallback to original parsing if no items found
+        if not items:
             return self._parse_numbered_content(content, expected_count)
         
         # Ensure we have exactly the expected count
-        if len(scenarios) < expected_count:
-            # Split the content differently as fallback
+        if len(items) < expected_count:
+            # Try alternative splitting
             chunks = content.split('\n\n')
-            scenarios = [chunk.strip() for chunk in chunks if chunk.strip() and 'سناریو' in chunk]
+            items = [chunk.strip() for chunk in chunks 
+                    if chunk.strip() and (('سناریو' in chunk) or ('ایده' in chunk))]
         
-        return scenarios[:expected_count] if scenarios else [content]
+        return items[:expected_count] if items else [content]
     
     def _get_style_prompt(self, style: PageStyle) -> str:
         """Get style-specific prompt"""

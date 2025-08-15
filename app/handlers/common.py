@@ -848,7 +848,7 @@ async def generate_reels_scenarios(message: Message, state: FSMContext, user_ser
         
         result_text = "🎬 سناریوهای ریلز پیشنهادی:\n\n"
         for i, scenario in enumerate(scenarios, 1):
-            result_text += f"سناریو {i}:\n{scenario}\n\n---\n\n"
+            result_text += f"\n{scenario}\n\n---\n\n"
         
         await message.answer(result_text.strip())
         await message.answer(
@@ -896,8 +896,13 @@ async def generate_visual_ideas(message: Message, state: FSMContext, user_servic
         await loading_msg.delete()
         
         result_text = "📷 ایده‌های بصری پیشنهادی:\n\n"
+        result_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
         for i, idea in enumerate(ideas, 1):
-            result_text += f"ایده {i}:\n{idea}\n\n---\n\n"
+            formatted_idea = format_visual_idea_message(idea)
+            result_text += f"{formatted_idea}\n\n"
+            if i < len(ideas):
+                result_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         
         await message.answer(result_text.strip())
         await message.answer(
@@ -1060,6 +1065,25 @@ def format_scenario_message(scenario: str, scenario_num: int, total: int) -> str
     
     formatted += "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     return formatted
+
+def format_visual_idea_message(idea: str) -> str:
+    """Format visual idea as professional Telegram message"""
+    formatted = ""
+    
+    # Clean and format the idea content
+    lines = idea.strip().split('\n')
+    for line in lines:
+        line = line.strip()
+        if line:
+            # Add proper formatting for different sections
+            if line.startswith('📸') or line.startswith('📐') or line.startswith('💡') or line.startswith('🎨') or line.startswith('🖼️') or line.startswith('💎'):
+                formatted += f"{line}\n"
+            elif line.startswith('ایده'):
+                formatted += f"**{line}**\n\n"
+            else:
+                formatted += f"{line}\n"
+    
+    return formatted.strip()
 
 def get_scenario_navigation_keyboard(current: int, total: int):
     """Create navigation keyboard for scenarios"""
