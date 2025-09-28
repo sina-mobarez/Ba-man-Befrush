@@ -25,11 +25,18 @@ class DbSessionMiddleware(BaseMiddleware):
         initializes the UserService with that session, and passes both to the handler.
         The session is automatically closed when the 'async with' block is exited.
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"DbSessionMiddleware called for event type: {type(event).__name__}")
+        
         async with self.session_pool() as session:
             # Provide the session object to the handler's data
             data["session"] = session
             # Provide a UserService instance initialized with the current session
             data["user_service"] = UserService(session)
+            
+            logger.info(f"UserService created and added to data for event: {type(event).__name__}")
             
             # Call the next handler in the chain
             return await handler(event, data)
