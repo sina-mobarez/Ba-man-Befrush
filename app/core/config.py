@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     # Payment settings
     ZARINPAL_MERCHANT_ID: Optional[str] = None
 
+    # Speech-to-text settings
+    WHISPER_MODEL_NAME: str = "vhdm/whisper-large-fa-v1"
+    AUDIO_MAX_FILE_SIZE_MB: int = 20
+    AUDIO_MAX_DURATION_SECONDS: int = 300  # 5 minutes
+    AUDIO_CACHE_DIR: Optional[str] = None
+
     @field_validator("LOG_LEVEL")
     def validate_log_level(cls, v: str) -> str:
         valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']

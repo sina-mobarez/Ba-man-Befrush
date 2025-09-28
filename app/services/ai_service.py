@@ -41,7 +41,8 @@ class AIService:
         self,
         product_description: str,
         user_profile: UserProfile,
-        additional_context: Optional[str] = None
+        additional_context: Optional[str] = None,
+        from_voice: bool = False
     ) -> List[str]:
         """Generate 3 captions for a product"""
         style_prompt = self._get_style_prompt(user_profile.page_style)
@@ -64,6 +65,7 @@ class AIService:
         - CTA (فراخوان عمل) در پایان هر کپشن بیاور
         - کپشن‌ها باید جذاب و متقاعدکننده باشند
         - زبان فارسی روان و طبیعی استفاده کن
+        {f"- ورودی از پیام صوتی تبدیل شده، اگر نکات زائد یا تکراری داشت نادیده بگیر" if from_voice else ""}
         """
         
         user_prompt = f"""
@@ -85,7 +87,8 @@ class AIService:
         self,
         theme: str,
         user_profile: UserProfile,
-        occasion: Optional[str] = None
+        occasion: Optional[str] = None,
+        from_voice: bool = False
     ) -> List[str]:
         """Generate Instagram Reels scenarios"""
         style_prompt = self._get_style_prompt(user_profile.page_style)
@@ -103,6 +106,7 @@ class AIService:
         - سناریوها باید قابل اجرا و عملی باشند
         - از ترندهای روز استفاده کن
         - هر سناریو را با عدد شماره‌گذاری کن
+        {f"- ورودی از پیام صوتی تبدیل شده، اگر نکات زائد یا تکراری داشت نادیده بگیر" if from_voice else ""}
         """
         
         user_prompt = f"""
@@ -124,7 +128,8 @@ class AIService:
         self,
         product_type: str,
         user_profile: UserProfile,
-        available_props: Optional[str] = None
+        available_props: Optional[str] = None,
+        from_voice: bool = False
     ) -> List[str]:
         """Generate visual ideas for photography"""
         style_prompt = self._get_style_prompt(user_profile.page_style)
@@ -140,6 +145,7 @@ class AIService:
         - ایده‌ها باید با امکانات موجود قابل اجرا باشند
         - نکات فنی عکاسی را هم بگو
         - هر ایده را با عدد شماره‌گذاری کن
+        {f"- ورودی از پیام صوتی تبدیل شده، اگر نکات زائد یا تکراری داشت نادیده بگیر" if from_voice else ""}
         """
         
         user_prompt = f"""

@@ -12,6 +12,7 @@ from core.logging_setup import setup_logging
 from handlers.common import router as common_router
 from middlewares.db_middleware import DbSessionMiddleware
 from services.ai_service import AIService
+from services.speech_service import SpeechService
 
 
 setup_logging(settings.LOG_LEVEL)
@@ -33,6 +34,7 @@ async def main() -> None:
     # 2. Initialize Services (as singletons)
     logger.info("Initializing services...")
     ai_service = AIService()
+    speech_service = SpeechService()
 
     # 3. Initialize Bot and Dispatcher
     bot = Bot(
@@ -56,7 +58,7 @@ async def main() -> None:
     logger.info("Starting bot with polling...")
     try:
         await bot.delete_webhook(drop_pending_updates=True)
-        await dp.start_polling(bot, ai_service=ai_service)
+        await dp.start_polling(bot, ai_service=ai_service, speech_service=speech_service)
     finally:
         # Graceful shutdown
         logger.info("Stopping bot and closing database connection...")

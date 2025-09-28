@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.filters import Command, StateFilter
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, Voice
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 import logging
@@ -8,6 +8,7 @@ import logging
 from core.config import settings
 from services.ai_service import AIService
 from services.user_service import UserService
+from services.speech_service import SpeechService
 from keyboards.builders import (
     get_main_menu, get_content_type_keyboard, get_profile_setup_keyboard,
     get_profile_edit_keyboard, get_payment_keyboard, get_back_keyboard
@@ -28,6 +29,7 @@ class ContentGeneration(StatesGroup):
     waiting_for_caption_input = State()
     waiting_for_reels_input = State()
     waiting_for_visual_input = State()
+    waiting_for_voice_confirmation = State()
 
 class ProfileEdit(StatesGroup):
     editing_style = State()
@@ -251,39 +253,134 @@ async def handle_content_generation(message: Message, state: FSMContext, user_se
         await message.answer("خطایی رخ داده است. لطفاً دوباره تلاش کنید.")
 
 @router.message(F.text == "✍️ کپشن نویسی", StateFilter(ContentGeneration.waiting_for_content_type))
-async def handle_caption_request(message: Message, state: FSMContext):
+async def handle_caption_request(message: Message, state: FSMContext, user_service: UserService):
     """Handle caption generation request"""
-    await message.answer(
-        "محصول یا موضوعی که می‌خواید کپشن براش بنویسم رو توضیح بدید:\n\n"
-        "مثال: انگشتر طلا با نگین الماس برای عروس‌خانم‌ها",
-        reply_markup=get_back_keyboard()
-    )
-    await state.set_state(ContentGeneration.waiting_for_caption_input)
+    data = await state.get_data()
+    voice_input = data.get('user_input')
+
+    if voice_input:
+        # User came from voice input, use it directly for caption generation
+        await message.answer(f"در حال تولید کپشن برای: \"{voice_input}\" ⏳")
+
+        # Simulate a message with the voice input for the caption generator
+        class VoiceInputMessage:
+            def __init__(self, text, from_user):
+                self.text = text
+                self.from_user = from_user
+
+        voice_message = VoiceInputMessage(voice_input, message.from_user)
+        await generate_captions(voice_message, state, user_service)
+    else:
+        # Normal text input flow
+        await message.answer(
+            "محصول یا موضوعی که می‌خواید کپشن براش بنویسم رو توضیح بدید:\n\n"
+            "مثال: انگشتر طلا با نگین الماس برای عروس‌خانم‌ها\n\n"
+            "💡 نکته: می‌توانید به جای تایپ، پیام صوتی ارسال کنید!",
+            reply_markup=get_back_keyboard()
+        )
+        await state.set_state(ContentGeneration.waiting_for_caption_input)
 
 @router.message(F.text == "🎬 سناریو ریلز", StateFilter(ContentGeneration.waiting_for_content_type))
-async def handle_reels_request(message: Message, state: FSMContext):
+async def handle_reels_request(message: Message, state: FSMContext, user_service: UserService):
     """Handle reels scenario request"""
-    await message.answer(
-        "موضوع یا مناسبتی که می‌خواید سناریو ریلز براش داشته باشید رو بگید:\n\n"
-        "مثال: فروش ویژه شب یلدا، معرفی مجموعه جدید، ولنتاین",
-        reply_markup=get_back_keyboard()
-    )
-    await state.set_state(ContentGeneration.waiting_for_reels_input)
+    data = await state.get_data()
+    voice_input = data.get('user_input')
+
+    if voice_input:
+        # User came from voice input, use it directly for reels generation
+        await message.answer(f"در حال تولید سناریو ریلز برای: \"{voice_input}\" 🎬")
+
+        # Simulate a message with the voice input for the reels generator
+        class VoiceInputMessage:
+            def __init__(self, text, from_user):
+                self.text = text
+                self.from_user = from_user
+
+        voice_message = VoiceInputMessage(voice_input, message.from_user)
+        await generate_reels_scenarios(voice_message, state, user_service)
+    else:
+        # Normal text input flow
+        await message.answer(
+            "موضوع یا مناسبتی که می‌خواید سناریو ریلز براش داشته باشید رو بگید:\n\n"
+            "مثال: فروش ویژه شب یلدا، معرفی مجموعه جدید، ولنتاین\n\n"
+            "💡 نکته: می‌توانید به جای تایپ، پیام صوتی ارسال کنید!",
+            reply_markup=get_back_keyboard()
+        )
+        await state.set_state(ContentGeneration.waiting_for_reels_input)
 
 @router.message(F.text == "📷 ایده بصری", StateFilter(ContentGeneration.waiting_for_content_type))
-async def handle_visual_request(message: Message, state: FSMContext):
+async def handle_visual_request(message: Message, state: FSMContext, user_service: UserService):
     """Handle visual ideas request"""
-    await message.answer(
-        "نوع محصولی که می‌خواید ایده عکاسی براش داشته باشید رو بگید:\n\n"
-        "مثال: دستبند طلا، گردنبند مروارید، حلقه نامزدی\n"
-        "اگر وسایل خاصی در دسترس دارید هم بگید.",
-        reply_markup=get_back_keyboard()
-    )
-    await state.set_state(ContentGeneration.waiting_for_visual_input)
+    data = await state.get_data()
+    voice_input = data.get('user_input')
+
+    if voice_input:
+        # User came from voice input, use it directly for visual ideas generation
+        await message.answer(f"در حال تولید ایده‌های بصری برای: \"{voice_input}\" 📷")
+
+        # Simulate a message with the voice input for the visual ideas generator
+        class VoiceInputMessage:
+            def __init__(self, text, from_user):
+                self.text = text
+                self.from_user = from_user
+
+        voice_message = VoiceInputMessage(voice_input, message.from_user)
+        await generate_visual_ideas(voice_message, state, user_service)
+    else:
+        # Normal text input flow
+        await message.answer(
+            "نوع محصولی که می‌خواید ایده عکاسی براش داشته باشید رو بگید:\n\n"
+            "مثال: دستبند طلا، گردنبند مروارید، حلقه نامزدی\n"
+            "اگر وسایل خاصی در دسترس دارید هم بگید.\n\n"
+            "💡 نکته: می‌توانید به جای تایپ، پیام صوتی ارسال کنید!",
+            reply_markup=get_back_keyboard()
+        )
+        await state.set_state(ContentGeneration.waiting_for_visual_input)
 
 # Content generation handlers
+# Voice support for content input states
+@router.message(F.voice, StateFilter(ContentGeneration.waiting_for_caption_input))
+async def handle_voice_caption_input(message: Message, state: FSMContext, user_service: UserService):
+    """Handle voice input for caption generation"""
+    try:
+        # Show processing message
+        processing_msg = await message.answer("🎤 در حال تبدیل صدا به متن...")
+
+        # Initialize speech service
+        speech_service = SpeechService()
+
+        # Process voice message
+        transcribed_text = await speech_service.process_voice_message(
+            message.bot,
+            message.voice.file_id,
+            voice_duration=message.voice.duration,
+            voice_file_size=message.voice.file_size
+        )
+
+        if not transcribed_text.strip():
+            await processing_msg.edit_text("❌ متأسفانه نتوانستم صدای شما را تشخیص دهم. لطفاً دوباره تلاش کنید.")
+            return
+
+        await processing_msg.delete()
+
+        # Use transcribed text for caption generation
+        class VoiceInputMessage:
+            def __init__(self, text, from_user):
+                self.text = text
+                self.from_user = from_user
+
+        voice_message = VoiceInputMessage(transcribed_text, message.from_user)
+        await generate_captions(voice_message, state, user_service, from_voice=True)
+
+    except ValueError as ve:
+        # Handle validation errors (file too large, too long, etc.)
+        await processing_msg.edit_text(f"❌ {str(ve)}")
+    except Exception as e:
+        logger.error(f"Error processing voice caption input: {e}")
+        await message.answer("خطا در تبدیل صدا به متن. لطفاً از متن استفاده کنید.")
+
 @router.message(StateFilter(ContentGeneration.waiting_for_caption_input))
-async def generate_captions(message: Message, state: FSMContext, user_service: UserService):
+async def generate_captions(message: Message, state: FSMContext, user_service: UserService, from_voice: bool = False):
     """Generate captions for user input"""
     if message.text == "🔙 بازگشت":
         await back_to_main_menu(message, state)
@@ -304,7 +401,8 @@ async def generate_captions(message: Message, state: FSMContext, user_service: U
         ai_service = AIService()
         captions = await ai_service.generate_caption(
             product_description=message.text,
-            user_profile=profile
+            user_profile=profile,
+            from_voice=from_voice
         )
         
         # Save to history
@@ -486,6 +584,123 @@ async def handle_payment_selection(callback: CallbackQuery):
         logger.error(f"Error in payment selection: {e}")
         await callback.answer("خطایی رخ داده است.")
 
+# Voice message handlers
+@router.message(F.voice)
+async def handle_voice_message(message: Message, state: FSMContext, user_service: UserService):
+    """Handle voice message for speech-to-text conversion"""
+    try:
+        user = await user_service.get_or_create_user(telegram_id=message.from_user.id)
+
+        # Check subscription
+        subscription = await user_service.get_user_subscription(user.id)
+        if not subscription or not subscription.is_active:
+            await message.answer(
+                "برای استفاده از قابلیت تبدیل صدا به متن، ابتدا باید اشتراک داشته باشید.",
+                reply_markup=get_payment_keyboard()
+            )
+            return
+
+        # Show processing message
+        processing_msg = await message.answer("🎤 در حال تبدیل صدا به متن...\nلطفاً کمی صبر کنید.")
+
+        try:
+            # Initialize speech service
+            speech_service = SpeechService()
+
+            # Process voice message
+            transcribed_text = await speech_service.process_voice_message(
+                message.bot,
+                message.voice.file_id,
+                voice_duration=message.voice.duration,
+                voice_file_size=message.voice.file_size
+            )
+
+            if not transcribed_text.strip():
+                await processing_msg.edit_text("❌ متأسفانه نتوانستم صدای شما را تشخیص دهم. لطفاً دوباره تلاش کنید.")
+                return
+
+        except ValueError as ve:
+            # Handle validation errors (file too large, too long, etc.)
+            await processing_msg.edit_text(f"❌ {str(ve)}")
+            return
+
+        # Delete processing message
+        await processing_msg.delete()
+
+        # Show transcription to user for confirmation
+        confirmation_text = f"""
+🎯 متن تشخیص داده شده:
+
+"{transcribed_text}"
+
+✅ اگر متن درست است، روی "تولید محتوا" کلیک کنید
+✏️ اگر می‌خواهید متن را ویرایش کنید، آن را دوباره تایپ کنید
+🔙 یا می‌توانید بازگشت کنید
+        """
+
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ تولید محتوا", callback_data="confirm_voice_text")],
+            [InlineKeyboardButton(text="🔙 بازگشت", callback_data="cancel_voice")]
+        ])
+
+        await message.answer(confirmation_text.strip(), reply_markup=keyboard)
+
+        # Store transcribed text in state
+        await state.update_data(voice_transcript=transcribed_text)
+        await state.set_state(ContentGeneration.waiting_for_voice_confirmation)
+
+    except Exception as e:
+        logger.error(f"Error processing voice message: {e}")
+        await message.answer("خطایی رخ داده است. لطفاً دوباره تلاش کنید.")
+
+@router.callback_query(F.data == "confirm_voice_text")
+async def confirm_voice_transcription(callback: CallbackQuery, state: FSMContext):
+    """Handle confirmation of voice transcription"""
+    try:
+        data = await state.get_data()
+        voice_transcript = data.get('voice_transcript', '')
+
+        if not voice_transcript:
+            await callback.answer("خطا: متن صوتی یافت نشد.")
+            return
+
+        await callback.message.edit_text(
+            f"✅ متن تأیید شد: \"{voice_transcript}\"\n\nچه نوع محتوایی می‌خواید تولید کنید؟",
+            reply_markup=get_content_type_keyboard()
+        )
+
+        # Store the transcript as input text and move to content selection
+        await state.update_data(user_input=voice_transcript)
+        await state.set_state(ContentGeneration.waiting_for_content_type)
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error confirming voice transcription: {e}")
+        await callback.answer("خطایی رخ داده است.")
+
+@router.callback_query(F.data == "cancel_voice")
+async def cancel_voice_transcription(callback: CallbackQuery, state: FSMContext, user_service: UserService):
+    """Handle cancellation of voice transcription"""
+    try:
+        user = await user_service.get_or_create_user(telegram_id=callback.from_user.id)
+        subscription = await user_service.get_user_subscription(user.id)
+        is_subscribed = subscription.is_active if subscription else False
+
+        await callback.message.edit_text("عملیات لغو شد.")
+        await callback.message.answer(
+            "چه کاری می‌تونم برای شما انجام بدهم؟",
+            reply_markup=get_main_menu(is_subscribed)
+        )
+        await state.clear()
+        await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Error canceling voice transcription: {e}")
+        await callback.answer("خطایی رخ داده است.")
+
+
 # Utility handlers
 @router.message(F.text == "🔙 بازگشت")
 async def back_to_main_menu(message: Message, state: FSMContext, user_service: UserService):
@@ -515,6 +730,11 @@ async def handle_help(message: Message):
 • کپشن نویسی: کپشن جذاب برای پست‌ها
 • سناریو ریلز: ایده برای ویدیوهای کوتاه
 • ایده بصری: پیشنهاد برای عکاسی محصولات
+
+🎤 قابلیت جدید - پیام صوتی:
+• می‌توانید به جای تایپ، پیام صوتی ارسال کنید
+• تبدیل صدا به متن فارسی با کیفیت بالا
+• پشتیبانی از تمام لهجه‌های فارسی
 
 🎛️ ویرایش پروفایل:
 • تغییر سبک، مخاطب و هدف
